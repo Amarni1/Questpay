@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -27,16 +27,29 @@
         <button class="nav-pill-btn" id="nav-leaderboard" onclick="switchView('leaderboard')">Reputation</button>
       </nav>
 
-      <!-- Right Header Status & Wallet -->
+      <!-- Right Header Status & Wallet (Cleanly Separated) -->
       <div class="header-widgets">
         <div class="network-badge">
           <div class="network-dot"></div>
           <span>Midnight Preview</span>
         </div>
 
-        <div id="wallet-button-container">
-          <button class="btn-wallet" id="btn-connect-wallet" onclick="handleConnectWallet()">
-            <span>⚡ Connect Lace</span>
+        <!-- Separate USDM Balance Card -->
+        <div class="header-balance-card" id="header-balance-card">
+          <div class="balance-card-left">
+            <span class="balance-icon">💰</span>
+            <div class="balance-text-group">
+              <span class="balance-sublabel">Available USDM</span>
+              <span class="balance-main-num" id="header-usdm-val">-- USDM</span>
+            </div>
+          </div>
+          <div class="dust-pill" id="header-dust-val">-- DUST</div>
+        </div>
+
+        <!-- Separate Wallet Connect / Address Card -->
+        <div class="header-wallet-card" id="header-wallet-card">
+          <button class="btn-wallet" id="btn-connect-wallet" onclick="openWalletModal()">
+            <span>⚡ Connect Wallet</span>
           </button>
         </div>
       </div>
@@ -209,6 +222,61 @@
           <span>Lock USDM Escrow & Publish Quest</span>
         </button>
       </form>
+    </div>
+  </div>
+
+  <!-- Connect Wallet Modal -->
+  <div class="modal-backdrop" id="wallet-modal-backdrop">
+    <div class="modal-box" style="max-width: 520px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem;">
+        <h2 style="font-size: 1.3rem; font-weight: 800; color: var(--text-main);" id="wallet-modal-title">Connect Wallet</h2>
+        <button class="btn-close-drawer" onclick="closeWalletModal()">✕</button>
+      </div>
+
+      <!-- Discovered Wallets View -->
+      <div id="wallet-selection-view">
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+          Connect your Midnight Preview or Cardano wallet to interact with on-chain bounties, claim USDM escrow, and build verifiable reputation.
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem;" id="discovered-wallets-list">
+          <!-- Injected via app.js -->
+        </div>
+
+        <div style="border-top: 1px solid var(--border-subtle); padding-top: 1.25rem;">
+          <label style="font-size: 0.78rem; font-weight: 700; color: var(--gold-primary); display: block; margin-bottom: 0.4rem; text-transform: uppercase;">
+            Or Paste Custom Midnight Address:
+          </label>
+          <div style="display: flex; gap: 0.5rem;">
+            <input type="text" class="input-styled" id="input-custom-wallet-addr" placeholder="mn_addr_preview1..." style="margin-bottom: 0;">
+            <button class="btn-secondary" onclick="connectCustomAddress()" style="white-space: nowrap;">Connect</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Connected Wallet Details View -->
+      <div id="wallet-details-view" style="display: none;">
+        <div style="background: var(--bg-obsidian); border: 1px solid var(--gold-border); border-radius: 16px; padding: 1.25rem; margin-bottom: 1.25rem;">
+          <div style="font-size: 0.75rem; color: var(--gold-primary); font-weight: 700; text-transform: uppercase; margin-bottom: 0.35rem;">Connected Address</div>
+          <div style="font-family: monospace; font-size: 0.85rem; color: #fff; word-break: break-all; margin-bottom: 1rem;" id="connected-modal-full-addr">--</div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+            <div style="background: var(--bg-surface-elevated); padding: 0.75rem; border-radius: 10px;">
+              <div style="font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; font-weight: 700;">USDM Balance</div>
+              <div style="font-size: 1.2rem; font-weight: 900; color: #60a5fa;" id="modal-usdm-val">0.00 USDM</div>
+            </div>
+            <div style="background: var(--bg-surface-elevated); padding: 0.75rem; border-radius: 10px;">
+              <div style="font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; font-weight: 700;">DUST Balance</div>
+              <div style="font-size: 1.2rem; font-weight: 900; color: #34d399;" id="modal-dust-val">0.00 DUST</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem;">
+          <button class="btn-secondary" style="flex: 1;" onclick="copyConnectedAddress()">📋 Copy Address</button>
+          <button class="btn-secondary" style="flex: 1; border-color: rgba(244,63,94,0.4); color: #fb7185;" onclick="disconnectWallet()">Disconnect</button>
+        </div>
+      </div>
     </div>
   </div>
 

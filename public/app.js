@@ -1,28 +1,45 @@
-﻿import { discoverMidnightWallets, connectMidnightLace, computeClientSha256 } from './cardanoMidnightWallets.js';
+import { 
+  discoverMidnightWallets, 
+  discoverCardanoWallets,
+  connectMidnightLace, 
+  getMidnightAddress, 
+  getMidnightUsdmBalance, 
+  getMidnightDustBalance,
+  computeClientSha256 
+} from './cardanoMidnightWallets.js';
 
 // Application State
 let activeView = 'explore';
 let currentCategory = 'all';
 let connectedWallet = {
   connected: false,
+  type: 'none',
+  name: 'Not Connected',
   address: null,
-  usdm: 500,
-  dust: 42.5,
-  name: 'Lace (Midnight Preview)'
+  api: null,
+  usdm: null,
+  dust: null
 };
 let allQuests = [];
 let selectedQuest = null;
+let balancePollInterval = null;
 
 // Initialize on Load
 window.addEventListener('DOMContentLoaded', async () => {
   initEventListeners();
   await loadPlatformStats();
   await loadQuests();
-  restoreSession();
+  await restoreSession();
 });
 
 function initEventListeners() {
-  window.handleConnectWallet = handleConnectWallet;
+  window.openWalletModal = openWalletModal;
+  window.closeWalletModal = closeWalletModal;
+  window.handleConnectMidnightExtension = handleConnectMidnightExtension;
+  window.connectCustomAddress = connectCustomAddress;
+  window.disconnectWallet = disconnectWallet;
+  window.copyConnectedAddress = copyConnectedAddress;
+
   window.switchView = switchView;
   window.filterCategory = filterCategory;
   window.openQuestDrawer = openQuestDrawer;
@@ -37,76 +54,336 @@ function initEventListeners() {
 }
 
 // ---------------------------------------------------------------------------
-// Wallet Connection
+// Wallet Connection & Modal Management
 // ---------------------------------------------------------------------------
-async function handleConnectWallet() {
-  try {
-    const wallets = discoverMidnightWallets();
-    if (wallets.length > 0) {
-      try {
-        const api = await connectMidnightLace();
-        if (api && typeof api.getUnshieldedAddress === 'function') {
-          const addr = await api.getUnshieldedAddress();
-          connectedWallet.address = addr;
-          connectedWallet.connected = true;
-        }
-      } catch (e) {
-        console.warn('Lace connect direct call fallback:', e.message);
-      }
-    }
 
-    // Default connected state for smooth local testing
-    if (!connectedWallet.address) {
-      connectedWallet.address = 'mn_addr_preview1zkquester987v6c5b4n3m2q1w8e7r6t5y4u3i2o1';
-      connectedWallet.connected = true;
-    }
+function openWalletModal() {
+  const modal = document.getElementById('wallet-modal-backdrop');
+  if (!modal) return;
+  modal.classList.add('active');
 
-    saveSession();
-    updateWalletUI();
-    showToast('🟢 Connected to Midnight Preview (Lace Wallet)', 'success');
-    await loadQuests();
-  } catch (err) {
-    showToast(`Wallet connection: ${err.message}`, 'error');
+  const selView = document.getElementById('wallet-selection-view');
+  const detView = document.getElementById('wallet-details-view');
+  const title = document.getElementById('wallet-modal-title');
+
+  if (connectedWallet.connected && connectedWallet.address) {
+    if (title) title.innerText = 'Connected Wallet';
+    if (selView) selView.style.display = 'none';
+    if (detView) detView.style.display = 'block';
+
+    const fullAddrEl = document.getElementById('connected-modal-full-addr');
+    const usdmEl = document.getElementById('modal-usdm-val');
+    const dustEl = document.getElementById('modal-dust-val');
+
+    if (fullAddrEl) fullAddrEl.innerText = connectedWallet.address;
+    if (usdmEl) usdmEl.innerText = `${connectedWallet.usdm !== null ? connectedWallet.usdm : '0.00'} USDM`;
+    if (dustEl) dustEl.innerText = `${connectedWallet.dust !== null ? connectedWallet.dust : '0.00'} DUST`;
+  } else {
+    if (title) title.innerText = 'Connect Wallet';
+    if (selView) selView.style.display = 'block';
+    if (detView) detView.style.display = 'none';
+    renderDiscoveredWallets();
   }
 }
 
-function updateWalletUI() {
-  const container = document.getElementById('wallet-button-container');
-  if (connectedWallet.connected && connectedWallet.address) {
-    const shortAddr = `${connectedWallet.address.slice(0, 10)}...${connectedWallet.address.slice(-6)}`;
-    container.innerHTML = `
-      <div class="wallet-badge-connected" onclick="disconnectWallet()" title="${connectedWallet.address}">
-        <span style="font-size: 0.85rem;">🌙</span>
-        <span style="font-weight: 700; font-size: 0.82rem; color: #fff;">${shortAddr}</span>
-        <div class="wallet-balance-bubble">${connectedWallet.usdm.toFixed(0)} USDM • ${connectedWallet.dust.toFixed(1)} DUST</div>
+function closeWalletModal() {
+  const modal = document.getElementById('wallet-modal-backdrop');
+  if (modal) modal.classList.remove('active');
+}
+
+function renderDiscoveredWallets() {
+  const container = document.getElementById('discovered-wallets-list');
+  if (!container) return;
+
+  const midnightWallets = discoverMidnightWallets();
+  const cardanoWallets = discoverCardanoWallets();
+
+  let html = '';
+
+  // 1. Midnight Extensions (Lace with Midnight Preview)
+  if (midnightWallets.length > 0) {
+    html += midnightWallets.map(w => `
+      <div class="wallet-select-item" onclick="handleConnectMidnightExtension('${w.id}')">
+        <div class="wallet-item-left">
+          <div class="wallet-icon-box">🌙</div>
+          <div>
+            <div class="wallet-name-label">${w.name}</div>
+            <div class="wallet-type-sublabel">Midnight Preview DApp Connector v${w.apiVersion}</div>
+          </div>
+        </div>
+        <button class="btn-connect-sm">Connect</button>
+      </div>
+    `).join('');
+  } else {
+    html += `
+      <div style="padding: 0.85rem 1rem; background: rgba(255,255,255,0.02); border: 1px dashed var(--border-subtle); border-radius: 12px; font-size: 0.82rem; color: var(--text-dim); text-align: center;">
+        No active Lace Midnight Preview extension detected. (You can also paste your address below).
       </div>
     `;
-  } else {
-    container.innerHTML = `
-      <button class="btn-wallet" id="btn-connect-wallet" onclick="handleConnectWallet()">
-        <span>⚡ Connect Lace</span>
-      </button>
+  }
+
+  // 2. Cardano CIP-30 Wallets (Vespr, Eternl, Lace, Nami)
+  if (cardanoWallets.length > 0) {
+    html += `
+      <div style="margin-top: 0.5rem; font-size: 0.72rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase;">
+        Cardano CIP-30 Wallets (USDM Source):
+      </div>
     `;
+    html += cardanoWallets.map(w => `
+      <div class="wallet-select-item" onclick="handleConnectCardanoWallet('${w.key}')">
+        <div class="wallet-item-left">
+          <div class="wallet-icon-box" style="color: #60a5fa;">₳</div>
+          <div>
+            <div class="wallet-name-label">${w.name}</div>
+            <div class="wallet-type-sublabel">Cardano CIP-30 Provider v${w.apiVersion}</div>
+          </div>
+        </div>
+        <button class="btn-connect-sm" style="background: var(--sapphire-gradient); color: #fff;">Connect</button>
+      </div>
+    `).join('');
+  }
+
+  container.innerHTML = html;
+}
+
+async function handleConnectMidnightExtension(id) {
+  try {
+    const api = await connectMidnightLace();
+    if (!api) throw new Error('No Midnight API returned from Lace');
+
+    const address = await getMidnightAddress(api);
+    if (!address) throw new Error('Could not retrieve unshielded address from Lace');
+
+    connectedWallet = {
+      connected: true,
+      type: 'midnight_extension',
+      name: 'Lace (Midnight Preview)',
+      address: address,
+      api: api,
+      usdm: '0.00',
+      dust: '0.00'
+    };
+
+    // Query real balances
+    await refreshWalletBalances();
+    saveSession();
+    updateUIHeaderWidgets();
+    closeWalletModal();
+    startBalancePolling();
+
+    showToast(`🟢 Connected: ${truncateAddr(address)}`, 'success');
+    await loadQuests();
+  } catch (err) {
+    console.error('[Wallet Connect Error]', err);
+    showToast(`Connection failed: ${err.message}`, 'error');
   }
 }
 
-window.disconnectWallet = function() {
-  connectedWallet = { connected: false, address: null, usdm: 0, dust: 0 };
-  sessionStorage.removeItem('questpay_wallet');
-  updateWalletUI();
-  showToast('Wallet disconnected', 'info');
-};
+async function handleConnectCardanoWallet(key) {
+  try {
+    if (!window.cardano || !window.cardano[key]) throw new Error(`Cardano wallet ${key} not available`);
+    const api = await window.cardano[key].enable();
+    
+    // Query address from CIP-30
+    let address = '';
+    if (typeof api.getChangeAddress === 'function') {
+      const rawHex = await api.getChangeAddress();
+      address = rawHex;
+    }
 
-function saveSession() {
-  sessionStorage.setItem('questpay_wallet', JSON.stringify(connectedWallet));
+    connectedWallet = {
+      connected: true,
+      type: 'cardano_cip30',
+      name: key.charAt(0).toUpperCase() + key.slice(1),
+      address: address || 'addr_connected_cardano',
+      api: api,
+      usdm: '0.00',
+      dust: '0.00'
+    };
+
+    saveSession();
+    updateUIHeaderWidgets();
+    closeWalletModal();
+    showToast(`🟢 Connected Cardano: ${connectedWallet.name}`, 'success');
+  } catch (err) {
+    showToast(`Cardano connection failed: ${err.message}`, 'error');
+  }
 }
 
-function restoreSession() {
+async function connectCustomAddress() {
+  const input = document.getElementById('input-custom-wallet-addr');
+  const addr = input ? input.value.trim() : '';
+
+  if (!addr || (!addr.startsWith('mn_addr_preview') && !addr.startsWith('mn_addr') && !addr.startsWith('addr'))) {
+    showToast('Please enter a valid Midnight address (starts with mn_addr_preview...)', 'error');
+    return;
+  }
+
+  connectedWallet = {
+    connected: true,
+    type: 'custom',
+    name: 'Midnight Address',
+    address: addr,
+    api: null,
+    usdm: '0.00',
+    dust: '0.00'
+  };
+
+  saveSession();
+  updateUIHeaderWidgets();
+  closeWalletModal();
+  showToast(`🟢 Address Saved: ${truncateAddr(addr)}`, 'success');
+  await loadQuests();
+}
+
+function disconnectWallet() {
+  connectedWallet = {
+    connected: false,
+    type: 'none',
+    name: 'Not Connected',
+    address: null,
+    api: null,
+    usdm: null,
+    dust: null
+  };
+  stopBalancePolling();
+  sessionStorage.removeItem('questpay_wallet');
+  updateUIHeaderWidgets();
+  closeWalletModal();
+  showToast('Wallet disconnected', 'info');
+  loadQuests();
+}
+
+function copyConnectedAddress() {
+  if (connectedWallet.address) {
+    navigator.clipboard.writeText(connectedWallet.address);
+    showToast('Address copied to clipboard!', 'success');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Balance Fetching & Clean Header Synchronization
+// ---------------------------------------------------------------------------
+
+async function refreshWalletBalances() {
+  if (!connectedWallet.connected || !connectedWallet.address) {
+    connectedWallet.usdm = null;
+    connectedWallet.dust = null;
+    updateUIHeaderWidgets();
+    return;
+  }
+
+  // If connected via direct Lace Midnight Extension
+  if (connectedWallet.api && connectedWallet.type === 'midnight_extension') {
+    try {
+      const [usdm, dust] = await Promise.all([
+        getMidnightUsdmBalance(connectedWallet.api),
+        getMidnightDustBalance(connectedWallet.api)
+      ]);
+      connectedWallet.usdm = usdm;
+      connectedWallet.dust = dust;
+    } catch (err) {
+      console.warn('[Balances] Direct API error:', err);
+    }
+  }
+
+  updateUIHeaderWidgets();
+}
+
+function startBalancePolling() {
+  stopBalancePolling();
+  balancePollInterval = setInterval(async () => {
+    if (typeof document !== 'undefined' && document.hidden) return;
+    if (connectedWallet.connected && connectedWallet.api) {
+      await refreshWalletBalances();
+    }
+  }, 15000);
+}
+
+function stopBalancePolling() {
+  if (balancePollInterval) {
+    clearInterval(balancePollInterval);
+    balancePollInterval = null;
+  }
+}
+
+// Cleanly Updates Separated USDM Balance Card & Wallet Card in Header
+function updateUIHeaderWidgets() {
+  const usdmEl = document.getElementById('header-usdm-val');
+  const dustEl = document.getElementById('header-dust-val');
+  const walletCard = document.getElementById('header-wallet-card');
+
+  // 1. Update Separate Available Balance Card
+  if (connectedWallet.connected && connectedWallet.address) {
+    const usdmDisplay = connectedWallet.usdm !== null ? connectedWallet.usdm : '0.00';
+    const dustDisplay = connectedWallet.dust !== null ? connectedWallet.dust : '0.00';
+
+    if (usdmEl) usdmEl.innerText = `${usdmDisplay} USDM`;
+    if (dustEl) dustEl.innerText = `${dustDisplay} DUST`;
+  } else {
+    if (usdmEl) usdmEl.innerText = '-- USDM';
+    if (dustEl) dustEl.innerText = '-- DUST';
+  }
+
+  // 2. Update Separate Wallet Connect Card
+  if (walletCard) {
+    if (connectedWallet.connected && connectedWallet.address) {
+      walletCard.innerHTML = `
+        <div class="wallet-badge-connected" onclick="openWalletModal()" title="${connectedWallet.address}">
+          <span style="font-size: 0.9rem;">🌙</span>
+          <span style="font-weight: 700; font-size: 0.85rem; color: #fff;">${truncateAddr(connectedWallet.address)}</span>
+        </div>
+      `;
+    } else {
+      walletCard.innerHTML = `
+        <button class="btn-wallet" id="btn-connect-wallet" onclick="openWalletModal()">
+          <span>⚡ Connect Wallet</span>
+        </button>
+      `;
+    }
+  }
+}
+
+function truncateAddr(addr) {
+  if (!addr) return '';
+  if (addr.length <= 16) return addr;
+  return `${addr.slice(0, 8)}...${addr.slice(-6)}`;
+}
+
+function saveSession() {
+  const state = {
+    connected: connectedWallet.connected,
+    type: connectedWallet.type,
+    name: connectedWallet.name,
+    address: connectedWallet.address,
+    usdm: connectedWallet.usdm,
+    dust: connectedWallet.dust
+  };
+  sessionStorage.setItem('questpay_wallet', JSON.stringify(state));
+}
+
+async function restoreSession() {
   const cached = sessionStorage.getItem('questpay_wallet');
   if (cached) {
     try {
-      connectedWallet = JSON.parse(cached);
-      updateWalletUI();
+      const state = JSON.parse(cached);
+      if (state.connected && state.address) {
+        connectedWallet = { ...connectedWallet, ...state };
+        
+        // Attempt silent re-connection with Lace if previously connected via extension
+        if (state.type === 'midnight_extension' && window.midnight) {
+          try {
+            const api = await connectMidnightLace();
+            connectedWallet.api = api;
+            await refreshWalletBalances();
+            startBalancePolling();
+          } catch (e) {
+            console.warn('[Session Restore] Lace silent connect note:', e.message);
+          }
+        }
+
+        updateUIHeaderWidgets();
+      }
     } catch (_) {}
   }
 }
@@ -154,7 +431,7 @@ function renderQuestsGrid(quests) {
   if (quests.length === 0) {
     container.innerHTML = `
       <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-dim);">
-        <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">No bounties found in this category.</p>
+        <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">No bounties found in this view.</p>
         <button class="btn-create-quest" onclick="openCreateQuestModal()">+ Create First Bounty</button>
       </div>
     `;
@@ -166,7 +443,6 @@ function renderQuestsGrid(quests) {
     const proofLabel = isZK ? '⚡ Automated ZK Proof' : '👤 Employer Attestation';
     const proofClass = isZK ? 'zk' : 'attestation';
     const isPaid = q.status === 'Paid';
-    const isAccepted = q.status === 'Accepted';
 
     return `
       <div class="quest-card">
@@ -202,7 +478,7 @@ function renderQuestsGrid(quests) {
 }
 
 // ---------------------------------------------------------------------------
-// Views & Category Filtering
+// Views & Navigation
 // ---------------------------------------------------------------------------
 function switchView(view) {
   activeView = view;
@@ -233,7 +509,7 @@ async function renderLeaderboardView() {
               <div style="display: flex; align-items: center; gap: 1rem;">
                 <span style="font-weight: 900; font-size: 1.2rem; color: ${i === 0 ? 'var(--gold-primary)' : 'var(--text-muted)'};">#${i + 1}</span>
                 <div>
-                  <div style="font-weight: 700; font-family: monospace; font-size: 0.85rem; color: #fff;">${u.address.slice(0, 16)}...${u.address.slice(-8)}</div>
+                  <div style="font-weight: 700; font-family: monospace; font-size: 0.85rem; color: #fff;">${truncateAddr(u.address)}</div>
                   <div style="font-size: 0.75rem; color: var(--gold-secondary);">${u.tier} • Score: ${u.reputationScore}/100</div>
                 </div>
               </div>
@@ -259,7 +535,7 @@ function filterCategory(cat, btn) {
 }
 
 // ---------------------------------------------------------------------------
-// Slide-Over Drawer (Right Panel)
+// Slide-Over Drawer (Right Panel for Quest Details & Solution Submission)
 // ---------------------------------------------------------------------------
 function openQuestDrawer(questId) {
   const quest = allQuests.find(q => q.id === questId);
@@ -310,9 +586,9 @@ async function handleSolutionInput(val) {
 async function submitActiveQuestProof() {
   if (!selectedQuest) return;
 
-  if (!connectedWallet.connected) {
-    showToast('Please connect your Lace wallet first', 'error');
-    handleConnectWallet();
+  if (!connectedWallet.connected || !connectedWallet.address) {
+    showToast('Please connect your wallet first', 'error');
+    openWalletModal();
     return;
   }
 
@@ -342,13 +618,10 @@ async function submitActiveQuestProof() {
     }
 
     if (data.verified) {
-      connectedWallet.usdm += selectedQuest.rewardUsdm;
-      saveSession();
-      updateWalletUI();
-
       showToast(`🎉 Verified! ${selectedQuest.rewardUsdm} USDM released to your wallet!`, 'success');
       btn.innerHTML = `<span>✓ USDM Escrow Claimed!</span>`;
 
+      await refreshWalletBalances();
       await loadPlatformStats();
       await loadQuests();
 
@@ -371,8 +644,9 @@ async function submitActiveQuestProof() {
 // Create Quest Modal
 // ---------------------------------------------------------------------------
 function openCreateQuestModal() {
-  if (!connectedWallet.connected) {
-    handleConnectWallet();
+  if (!connectedWallet.connected || !connectedWallet.address) {
+    openWalletModal();
+    return;
   }
   document.getElementById('create-modal-backdrop').classList.add('active');
 }
@@ -410,7 +684,7 @@ async function handleCreateQuestSubmit(e) {
         rewardUsdm,
         proofType,
         secretAnswer,
-        employerWallet: connectedWallet.address || 'mn_addr_preview1demoemployer'
+        employerWallet: connectedWallet.address || 'mn_addr_preview1employer'
       })
     });
 
@@ -455,3 +729,4 @@ function showToast(message, type = 'info') {
     setTimeout(() => toast.remove(), 400);
   }, 4000);
 }
+

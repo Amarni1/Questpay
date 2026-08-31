@@ -1,4 +1,4 @@
-﻿/* ==========================================================================
+/* ==========================================================================
    QuestPay - Ultra-Rich Luxury Fintech & Web3 Styling
    Obsidian Black • Champagne Gold • Sapphire Blue • Ruby Crimson
    ========================================================================== */
@@ -164,7 +164,7 @@ body {
   border: 1px solid var(--gold-border);
 }
 
-/* Header Right Widgets */
+/* Header Right Widgets (Clean & Separated) */
 .header-widgets {
   display: flex;
   align-items: center;
@@ -178,7 +178,7 @@ body {
   background: rgba(56, 117, 246, 0.12);
   border: 1px solid rgba(56, 117, 246, 0.3);
   color: #93c5fd;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
   padding: 0.45rem 0.85rem;
   border-radius: 9999px;
@@ -192,6 +192,69 @@ body {
   box-shadow: 0 0 8px var(--sapphire-blue);
 }
 
+/* Separate USDM Balance Card */
+.header-balance-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 0.35rem 0.85rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  transition: var(--transition-smooth);
+}
+
+.header-balance-card:hover {
+  border-color: rgba(56, 117, 246, 0.4);
+  box-shadow: 0 0 15px var(--sapphire-glow);
+}
+
+.balance-card-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.balance-icon {
+  font-size: 1rem;
+}
+
+.balance-text-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.balance-sublabel {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.balance-main-num {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: #60a5fa;
+  letter-spacing: -0.01em;
+}
+
+.dust-pill {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #34d399;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+}
+
+/* Separate Wallet Card */
+.header-wallet-card {
+  display: flex;
+  align-items: center;
+}
+
 .btn-wallet {
   display: flex;
   align-items: center;
@@ -201,7 +264,7 @@ body {
   font-size: 0.85rem;
   font-weight: 700;
   padding: 0.55rem 1.2rem;
-  border-radius: 9999px;
+  border-radius: 12px;
   border: none;
   cursor: pointer;
   transition: var(--transition-smooth);
@@ -217,10 +280,10 @@ body {
   display: flex;
   align-items: center;
   gap: 0.65rem;
-  background: var(--bg-surface-elevated);
+  background: var(--bg-surface);
   border: 1px solid var(--gold-border);
-  padding: 0.4rem 0.85rem;
-  border-radius: 9999px;
+  padding: 0.45rem 0.95rem;
+  border-radius: 12px;
   cursor: pointer;
   transition: var(--transition-smooth);
 }
@@ -230,13 +293,63 @@ body {
   box-shadow: 0 0 15px var(--gold-glow);
 }
 
-.wallet-balance-bubble {
-  font-size: 0.8rem;
+/* Wallet Selection List Items in Modal */
+.wallet-select-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  padding: 0.85rem 1.1rem;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.wallet-select-item:hover {
+  border-color: var(--gold-border);
+  background: var(--bg-glass-hover);
+  transform: translateX(3px);
+  box-shadow: 0 0 16px var(--gold-glow);
+}
+
+.wallet-item-left {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.wallet-icon-box {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(243, 186, 47, 0.15);
+  border: 1px solid var(--gold-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+}
+
+.wallet-name-label {
   font-weight: 700;
-  color: var(--gold-primary);
-  background: rgba(243, 186, 47, 0.12);
-  padding: 0.2rem 0.6rem;
-  border-radius: 9999px;
+  font-size: 0.92rem;
+  color: var(--text-main);
+}
+
+.wallet-type-sublabel {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.btn-connect-sm {
+  background: var(--gold-gradient);
+  color: #000;
+  font-weight: 800;
+  font-size: 0.78rem;
+  padding: 0.35rem 0.85rem;
+  border-radius: 8px;
+  border: none;
 }
 
 /* ==========================================================================
