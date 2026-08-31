@@ -9,7 +9,7 @@ import {
 } from './cardanoMidnightWallets.js';
 
 // Application State
-let activeView = 'explore';
+let activeView = 'dashboard';
 let currentCategory = 'all';
 let connectedWallet = {
   connected: false,
@@ -21,6 +21,12 @@ let connectedWallet = {
   dust: null
 };
 let allQuests = [];
+let platformStats = {
+  totalEscrowLockedUsdm: 0,
+  activeQuestsCount: 0,
+  completedQuestsCount: 0,
+  successRate: '100% Verified'
+};
 let selectedQuest = null;
 let uploadedScreenshots = [];
 let allTransactions = [];
@@ -34,6 +40,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   await loadPlatformStats();
   await loadQuests();
   await restoreSession();
+  switchView('dashboard');
 });
 
 function initEventListeners() {
@@ -218,7 +225,6 @@ async function handleConnectMidnightExtension(id) {
       dust: '0.00'
     };
 
-    // Query real balances
     await refreshWalletBalances();
     saveSession();
     updateUIHeaderWidgets();
@@ -226,7 +232,7 @@ async function handleConnectMidnightExtension(id) {
     startBalancePolling();
 
     showToast(`🟢 Connected: ${truncateAddr(address)}`, 'success');
-    handleViewAfterAuth();
+    switchView(activeView);
   } catch (err) {
     console.error('[Wallet Connect Error]', err);
     showToast(`Connection failed: ${err.message}`, 'error');
@@ -258,7 +264,7 @@ async function handleConnectCardanoWallet(key) {
     updateUIHeaderWidgets();
     closeWalletModal();
     showToast(`🟢 Connected Cardano: ${connectedWallet.name}`, 'success');
-    handleViewAfterAuth();
+    switchView(activeView);
   } catch (err) {
     showToast(`Cardano connection failed: ${err.message}`, 'error');
   }
@@ -287,17 +293,7 @@ async function connectCustomAddress() {
   updateUIHeaderWidgets();
   closeWalletModal();
   showToast(`🟢 Address Saved: ${truncateAddr(addr)}`, 'success');
-  handleViewAfterAuth();
-}
-
-function handleViewAfterAuth() {
-  if (activeView === 'mybounties') {
-    renderMyBountiesView();
-  } else if (activeView === 'history') {
-    renderTransactionHistoryView();
-  } else {
-    loadQuests();
-  }
+  switchView(activeView);
 }
 
 function disconnectWallet() {
@@ -315,14 +311,7 @@ function disconnectWallet() {
   updateUIHeaderWidgets();
   closeWalletModal();
   showToast('Wallet disconnected', 'info');
-  
-  if (activeView === 'mybounties') {
-    renderMyBountiesView();
-  } else if (activeView === 'history') {
-    renderTransactionHistoryView();
-  } else {
-    loadQuests();
-  }
+  switchView(activeView);
 }
 
 function copyConnectedAddress() {
@@ -470,15 +459,12 @@ async function loadPlatformStats() {
     const res = await fetch('/api/stats');
     if (!res.ok) return;
     const data = await res.json();
-    const escrowEl = document.getElementById('stat-escrow-val');
-    const activeEl = document.getElementById('stat-active-val');
-    const rateEl = document.getElementById('stat-rate-val');
-    const completedEl = document.getElementById('stat-completed-val');
-
-    if (escrowEl) escrowEl.innerText = `$${(data.totalEscrowLockedUsdm || 0).toLocaleString()} USDM`;
-    if (activeEl) activeEl.innerText = `${data.activeQuestsCount || 0} Active`;
-    if (rateEl) rateEl.innerText = data.successRate || '100% Verified';
-    if (completedEl) completedEl.innerText = `${data.completedQuestsCount || 0} Paid`;
+    platformStats = {
+      totalEscrowLockedUsdm: data.totalEscrowLockedUsdm || 0,
+      activeQuestsCount: data.activeQuestsCount || 0,
+      completedQuestsCount: data.completedQuestsCount || 0,
+      successRate: data.successRate || '100% Verified'
+    };
   } catch (err) {
     console.warn('Stats fetch error:', err.message);
   }
@@ -486,153 +472,338 @@ async function loadPlatformStats() {
 
 async function loadQuests() {
   try {
-    let url = `/api/quests?category=${currentCategory}`;
-    if (activeView === 'employer' && connectedWallet.address) {
-      url = `/api/quests?employer=${encodeURIComponent(connectedWallet.address)}`;
-    }
-
-    const res = await fetch(url);
+    const res = await fetch('/api/quests');
     if (!res.ok) throw new Error('Failed to fetch quests');
     const data = await res.json();
     allQuests = data.quests || [];
-    renderQuestsGrid(allQuests);
   } catch (err) {
     console.error('Load quests error:', err);
   }
 }
 
-function renderQuestsGrid(quests) {
-  const container = document.getElementById('quests-container');
-  if (!container) return;
-
-  if (quests.length === 0) {
-    container.innerHTML = `
-      <div style="grid-column: 1 / -1; text-align: center; padding: 4.5rem 1.5rem; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 20px;">
-        <div style="font-size: 2.5rem; margin-bottom: 0.85rem;">🛡️</div>
-        <h3 style="font-size: 1.35rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.5rem;">No Active Bounties Yet</h3>
-        <p style="font-size: 0.92rem; color: var(--text-muted); max-width: 480px; margin: 0 auto 1.75rem; line-height: 1.5;">
-          There are currently no open bounties matching this filter. Create a new quest to lock USDM into a Compact escrow contract!
-        </p>
-        <button class="btn-create-quest" onclick="openCreateQuestModal()" style="display: inline-flex; margin: 0 auto;">
-          <span>+ Create & Fund First Quest</span>
-        </button>
-      </div>
-    `;
-    return;
-  }
-
-  container.innerHTML = quests.map(q => {
-    const isZK = q.proofType === 'AutomatedZkSecret';
-    const proofLabel = isZK ? '⚡ Automated ZK Proof' : '👤 Employer Attestation';
-    const proofClass = isZK ? 'zk' : 'attestation';
-    const isPaid = q.status === 'Paid';
-
-    return `
-      <div class="quest-card">
-        <div>
-          <div class="card-top-tags">
-            <span class="bounty-pill">${q.category}</span>
-            <span class="urgency-pill">⏱️ ${isPaid ? 'Completed' : 'Active'}</span>
-          </div>
-          <h3 class="quest-title">${q.title}</h3>
-          <p class="quest-desc">${q.description}</p>
-        </div>
-
-        <div>
-          <div class="quest-meta-row">
-            <div class="reward-amount-box">
-              <span class="reward-title">USDM Escrow</span>
-              <span class="reward-val">${q.rewardUsdm} USDM</span>
-            </div>
-            <div class="proof-mode-badge ${proofClass}">${proofLabel}</div>
-          </div>
-
-          <div class="card-skills-row">
-            ${(q.skillTags || []).map(t => `<span class="skill-tag">${t}</span>`).join('')}
-          </div>
-
-          <button class="btn-open-quest" onclick="openQuestDrawer('${q.id}')">
-            <span>${isPaid ? '✓ View Payout Receipt' : 'Inspect & Solve Bounty ➔'}</span>
-          </button>
-        </div>
-      </div>
-    `;
-  }).join('');
-}
-
 // ---------------------------------------------------------------------------
-// Views & Navigation
+// Master View Switcher (Completely Independent Page Views)
 // ---------------------------------------------------------------------------
 function switchView(view) {
   activeView = view;
   
-  // Update sidebar active buttons
+  // Highlight active sidebar item
   document.querySelectorAll('.sidebar-nav-item').forEach(btn => btn.classList.remove('active'));
   const activeBtn = document.getElementById(`side-nav-${view}`);
   if (activeBtn) activeBtn.classList.add('active');
 
-  const controlsBar = document.getElementById('controls-bar');
+  const mainContainer = document.getElementById('main-view-container');
+  if (!mainContainer) return;
 
-  if (view === 'explore' || view === 'employer') {
-    if (controlsBar) controlsBar.style.display = 'flex';
-    loadQuests();
-  } else {
-    if (controlsBar) controlsBar.style.display = 'none';
-    if (view === 'mybounties') {
-      renderMyBountiesView();
-    } else if (view === 'leaderboard') {
-      renderLeaderboardView();
-    } else if (view === 'history') {
-      renderTransactionHistoryView();
-    }
+  if (view === 'dashboard') {
+    renderDashboardView(mainContainer);
+  } else if (view === 'explore') {
+    renderExploreView(mainContainer);
+  } else if (view === 'mybounties') {
+    renderMyBountiesView(mainContainer);
+  } else if (view === 'employer') {
+    renderEmployerHubView(mainContainer);
+  } else if (view === 'leaderboard') {
+    renderLeaderboardView(mainContainer);
+  } else if (view === 'history') {
+    renderTransactionHistoryView(mainContainer);
   }
+}
+
+// ---------------------------------------------------------------------------
+// 1. DASHBOARD VIEW (Hero Section + Stats Ribbon + Launchpad + Protocol Info)
+// ---------------------------------------------------------------------------
+function renderDashboardView(container) {
+  const activeBounties = allQuests.filter(q => q.status === 'Open').slice(0, 3);
+
+  container.innerHTML = `
+    <div class="dashboard-wrapper">
+      <!-- Hero Section (Matches uploaded screenshot) -->
+      <section class="hero-section" style="padding: 1.5rem 0 1rem;">
+        <div class="hero-tagline">
+          <span>🛡️ ZERO-KNOWLEDGE ESCROW PROTOCOL</span>
+        </div>
+        <h1 class="hero-headline">
+          Decentralized <span>ZK Quest Escrow</span> Marketplace
+        </h1>
+        <p class="hero-subtitle">
+          Lock bounties in privacy-preserving Compact smart contracts. Submit cryptographic proofs, solve developer riddles, and receive instant USDM payouts on Midnight Preview.
+        </p>
+
+        <!-- Platform Stats Ribbon (Exact match to screenshot) -->
+        <div class="stats-ribbon">
+          <div class="stat-card">
+            <div class="stat-label">TOTAL USDM ESCROWED</div>
+            <div class="stat-value gold">$${platformStats.totalEscrowLockedUsdm.toLocaleString()} USDM</div>
+          </div>
+          <div class="stat-card blue">
+            <div class="stat-label">ACTIVE QUESTS</div>
+            <div class="stat-value blue">${platformStats.activeQuestsCount} Active</div>
+          </div>
+          <div class="stat-card emerald">
+            <div class="stat-label">VERIFICATION RATE</div>
+            <div class="stat-value emerald">${platformStats.successRate}</div>
+          </div>
+          <div class="stat-card red">
+            <div class="stat-label">COMPLETED & PAID</div>
+            <div class="stat-value">${platformStats.completedQuestsCount} Paid</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Dashboard Quick Navigation Launchpad -->
+      <section>
+        <div class="dashboard-section-header">
+          <div class="dashboard-section-title">🚀 Quick Actions & Navigation</div>
+        </div>
+
+        <div class="dashboard-quick-grid">
+          <div class="dashboard-quick-card">
+            <div class="dashboard-quick-top">
+              <div class="dashboard-quick-icon" style="color: #60a5fa;">🔍</div>
+              <div>
+                <div class="dashboard-quick-title">Explore Quests</div>
+                <div class="dashboard-quick-desc">Browse open cryptographic bounties, audit riddles, and community quests.</div>
+              </div>
+            </div>
+            <button class="dashboard-quick-btn" onclick="switchView('explore')">
+              <span>Browse All Bounties</span>
+              <span>➔</span>
+            </button>
+          </div>
+
+          <div class="dashboard-quick-card">
+            <div class="dashboard-quick-top">
+              <div class="dashboard-quick-icon" style="color: var(--gold-primary);">⚔️</div>
+              <div>
+                <div class="dashboard-quick-title">My Bounties</div>
+                <div class="dashboard-quick-desc">Manage your created bounties, inspect evidence, or cancel open escrows.</div>
+              </div>
+            </div>
+            <button class="dashboard-quick-btn" onclick="switchView('mybounties')">
+              <span>View My Portfolio</span>
+              <span>➔</span>
+            </button>
+          </div>
+
+          <div class="dashboard-quick-card">
+            <div class="dashboard-quick-top">
+              <div class="dashboard-quick-icon" style="color: #34d399;">💼</div>
+              <div>
+                <div class="dashboard-quick-title">Create Quest</div>
+                <div class="dashboard-quick-desc">Lock USDM in privacy-preserving Compact contracts and set submission rules.</div>
+              </div>
+            </div>
+            <button class="dashboard-quick-btn" onclick="openCreateQuestModal()">
+              <span>+ Lock & Escrow Bounty</span>
+              <span>➔</span>
+            </button>
+          </div>
+
+          <div class="dashboard-quick-card">
+            <div class="dashboard-quick-top">
+              <div class="dashboard-quick-icon" style="color: #c084fc;">📜</div>
+              <div>
+                <div class="dashboard-quick-title">Tx History</div>
+                <div class="dashboard-quick-desc">Inspect your persistent on-chain transaction ledger and verifiable hashes.</div>
+              </div>
+            </div>
+            <button class="dashboard-quick-btn" onclick="switchView('history')">
+              <span>Open Ledger History</span>
+              <span>➔</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Protocol Telemetry & Midnight Preview Status -->
+      <section>
+        <div class="dashboard-section-header">
+          <div class="dashboard-section-title">🔒 Protocol & Contract Telemetry</div>
+        </div>
+
+        <div class="dashboard-telemetry-box">
+          <div class="telemetry-item">
+            <div class="telemetry-label">Network Status</div>
+            <div class="telemetry-val" style="color: #34d399;">● Midnight Preview Live</div>
+          </div>
+          <div class="telemetry-item">
+            <div class="telemetry-label">Compact Escrow Contract</div>
+            <div class="telemetry-val">471dfe55c866f...e73e485c</div>
+          </div>
+          <div class="telemetry-item">
+            <div class="telemetry-label">ZK Proof Protocol</div>
+            <div class="telemetry-val" style="color: var(--gold-primary);">SHA-256 Witness Commitment</div>
+          </div>
+          <div class="telemetry-item">
+            <div class="telemetry-label">Settlement Currency</div>
+            <div class="telemetry-val" style="color: #60a5fa;">USDM (Midnight Native)</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Featured / Trending Quests Section -->
+      <section>
+        <div class="dashboard-section-header">
+          <div class="dashboard-section-title">⚡ Featured Open Bounties</div>
+          <button class="btn-secondary" onclick="switchView('explore')" style="font-size: 0.82rem; padding: 0.4rem 0.85rem;">View All Bounties ➔</button>
+        </div>
+
+        <div class="quests-grid">
+          ${activeBounties.length === 0 ? `
+            <div style="grid-column: 1 / -1; text-align: center; padding: 2.5rem; background: var(--bg-surface); border-radius: 16px; border: 1px solid var(--border-subtle);">
+              <div style="color: var(--text-dim); margin-bottom: 0.75rem;">No open bounties at the moment.</div>
+              <button class="btn-create-quest" onclick="openCreateQuestModal()" style="margin: 0 auto;"><span>+ Create First Quest</span></button>
+            </div>
+          ` : activeBounties.map(renderQuestCardHtml).join('')}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// 2. EXPLORE QUESTS VIEW (Independent Page)
+// ---------------------------------------------------------------------------
+function renderExploreView(container) {
+  const filtered = currentCategory === 'all' 
+    ? allQuests 
+    : allQuests.filter(q => q.category === currentCategory);
+
+  container.innerHTML = `
+    <div>
+      <!-- Page Header -->
+      <div class="page-header-box">
+        <div class="page-header-left">
+          <h1 class="page-title">🔍 Explore Active Quests</h1>
+          <p class="page-subtitle">
+            Discover privacy-preserving developer bounties, cryptographic challenges, and community quests on Midnight Preview.
+          </p>
+        </div>
+        <button class="btn-create-quest" onclick="openCreateQuestModal()">
+          <span>+ Create & Fund Quest</span>
+        </button>
+      </div>
+
+      <!-- Controls & Filter Bar -->
+      <div class="controls-bar">
+        <div class="category-filters">
+          <button class="filter-chip ${currentCategory === 'all' ? 'active' : ''}" onclick="filterCategory('all', this)">All Bounties</button>
+          <button class="filter-chip ${currentCategory === 'ZK Cryptography' ? 'active' : ''}" onclick="filterCategory('ZK Cryptography', this)">ZK Cryptography</button>
+          <button class="filter-chip ${currentCategory === 'Smart Contract Audit' ? 'active' : ''}" onclick="filterCategory('Smart Contract Audit', this)">Smart Contract Audit</button>
+          <button class="filter-chip ${currentCategory === 'Research & Benchmarking' ? 'active' : ''}" onclick="filterCategory('Research & Benchmarking', this)">Research & Telemetry</button>
+          <button class="filter-chip ${currentCategory === 'Social & Community' ? 'active' : ''}" onclick="filterCategory('Social & Community', this)">Social & Community</button>
+        </div>
+      </div>
+
+      <!-- Quests Grid -->
+      <div class="quests-grid" id="quests-grid-container">
+        ${filtered.length === 0 ? `
+          <div style="grid-column: 1 / -1; text-align: center; padding: 4.5rem 1.5rem; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 20px;">
+            <div style="font-size: 2.5rem; margin-bottom: 0.85rem;">🛡️</div>
+            <h3 style="font-size: 1.35rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.5rem;">No Bounties in this Category</h3>
+            <p style="font-size: 0.92rem; color: var(--text-muted); max-width: 480px; margin: 0 auto 1.75rem; line-height: 1.5;">
+              There are currently no open bounties matching "${currentCategory}". Create a new quest to lock USDM into a Compact escrow contract!
+            </p>
+            <button class="btn-create-quest" onclick="openCreateQuestModal()" style="display: inline-flex; margin: 0 auto;">
+              <span>+ Create & Fund Quest</span>
+            </button>
+          </div>
+        ` : filtered.map(renderQuestCardHtml).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderQuestCardHtml(q) {
+  const isZK = q.proofType === 'AutomatedZkSecret';
+  const proofLabel = isZK ? '⚡ Automated ZK Proof' : '👤 Employer Attestation';
+  const proofClass = isZK ? 'zk' : 'attestation';
+  const isPaid = q.status === 'Paid';
+
+  return `
+    <div class="quest-card">
+      <div>
+        <div class="card-top-tags">
+          <span class="bounty-pill">${q.category}</span>
+          <span class="urgency-pill">⏱️ ${isPaid ? 'Completed' : 'Active'}</span>
+        </div>
+        <h3 class="quest-title">${q.title}</h3>
+        <p class="quest-desc">${q.description}</p>
+      </div>
+
+      <div>
+        <div class="quest-meta-row">
+          <div class="reward-amount-box">
+            <span class="reward-title">USDM Escrow</span>
+            <span class="reward-val">${q.rewardUsdm} USDM</span>
+          </div>
+          <div class="proof-mode-badge ${proofClass}">${proofLabel}</div>
+        </div>
+
+        <div class="card-skills-row">
+          ${(q.skillTags || []).map(t => `<span class="skill-tag">${t}</span>`).join('')}
+        </div>
+
+        <button class="btn-open-quest" onclick="openQuestDrawer('${q.id}')">
+          <span>${isPaid ? '✓ View Payout Receipt' : 'Inspect & Solve Bounty ➔'}</span>
+        </button>
+      </div>
+    </div>
+  `;
 }
 
 function filterCategory(cat, btn) {
   currentCategory = cat;
-  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  loadQuests();
+  const mainContainer = document.getElementById('main-view-container');
+  if (mainContainer && activeView === 'explore') {
+    renderExploreView(mainContainer);
+  }
 }
 
 // ---------------------------------------------------------------------------
-// My Bounties View & Delete Actions
+// 3. MY BOUNTIES VIEW (Independent Page)
 // ---------------------------------------------------------------------------
-async function renderMyBountiesView() {
-  const container = document.getElementById('quests-container');
-  if (!container) return;
-
+function renderMyBountiesView(container) {
   if (!connectedWallet.connected || !connectedWallet.address) {
     container.innerHTML = `
-      <div style="grid-column: 1 / -1; text-align: center; padding: 4.5rem 1.5rem; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 20px;">
-        <div style="font-size: 2.8rem; margin-bottom: 0.85rem;">🔒</div>
-        <h3 style="font-size: 1.35rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.5rem;">Connect Wallet to View My Bounties</h3>
-        <p style="font-size: 0.92rem; color: var(--text-muted); max-width: 480px; margin: 0 auto 1.75rem; line-height: 1.5;">
-          Connect your Midnight Preview wallet to track quests you created, cancel open escrows, or inspect your submissions.
-        </p>
-        <button class="btn-create-quest" onclick="openWalletModal()" style="display: inline-flex; margin: 0 auto;">
-          <span>⚡ Connect Wallet Now</span>
-        </button>
+      <div>
+        <div class="page-header-box">
+          <div class="page-header-left">
+            <h1 class="page-title">⚔️ My Bounties Portfolio</h1>
+            <p class="page-subtitle">Manage bounties you have created, cancel open escrows, and review your won payout receipts.</p>
+          </div>
+        </div>
+        <div style="text-align: center; padding: 4.5rem 1.5rem; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 20px;">
+          <div style="font-size: 2.8rem; margin-bottom: 0.85rem;">🔒</div>
+          <h3 style="font-size: 1.35rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.5rem;">Connect Wallet to View My Bounties</h3>
+          <p style="font-size: 0.92rem; color: var(--text-muted); max-width: 480px; margin: 0 auto 1.75rem; line-height: 1.5;">
+            Connect your Midnight Preview wallet to track quests you created, cancel open escrows, or inspect your submissions.
+          </p>
+          <button class="btn-create-quest" onclick="openWalletModal()" style="display: inline-flex; margin: 0 auto;">
+            <span>⚡ Connect Wallet Now</span>
+          </button>
+        </div>
       </div>
     `;
     return;
   }
 
+  const myCreated = allQuests.filter(q => q.employerWallet && q.employerWallet.toLowerCase() === connectedWallet.address.toLowerCase());
+  const myParticipated = allQuests.filter(q => q.questerWallet && q.questerWallet.toLowerCase() === connectedWallet.address.toLowerCase());
+
   container.innerHTML = `
-    <div style="grid-column: 1 / -1; text-align: center; padding: 3rem 1rem;">
-      <div style="font-size: 1.2rem; color: var(--gold-primary); font-weight: 700;">⏳ Loading your on-chain bounties...</div>
-    </div>
-  `;
+    <div>
+      <div class="page-header-box">
+        <div class="page-header-left">
+          <h1 class="page-title">⚔️ My Bounties Portfolio</h1>
+          <p class="page-subtitle">Manage bounties you have created, cancel open escrows, and review your won payout receipts.</p>
+        </div>
+        <button class="btn-create-quest" onclick="openCreateQuestModal()">
+          <span>+ Create & Fund Quest</span>
+        </button>
+      </div>
 
-  try {
-    const res = await fetch('/api/quests');
-    const data = await res.json();
-    const all = data.quests || [];
-
-    const myCreated = all.filter(q => q.employerWallet && q.employerWallet.toLowerCase() === connectedWallet.address.toLowerCase());
-    const myParticipated = all.filter(q => q.questerWallet && q.questerWallet.toLowerCase() === connectedWallet.address.toLowerCase());
-
-    container.innerHTML = `
       <div class="my-bounties-wrapper">
         <!-- Section 1: Quests Created by Connected Wallet -->
         <div class="my-bounties-section">
@@ -723,10 +894,8 @@ async function renderMyBountiesView() {
           </div>
         </div>
       </div>
-    `;
-  } catch (err) {
-    showToast('Failed to load my bounties', 'error');
-  }
+    </div>
+  `;
 }
 
 function formatQuestType(type) {
@@ -786,7 +955,8 @@ async function executeConfirmDelete() {
     closeConfirmDialog();
     await refreshWalletBalances();
     await loadPlatformStats();
-    renderMyBountiesView();
+    await loadQuests();
+    switchView('mybounties');
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
   } finally {
@@ -798,31 +968,184 @@ async function executeConfirmDelete() {
 }
 
 // ---------------------------------------------------------------------------
-// Transaction History View
+// 4. EMPLOYER HUB VIEW (Independent Page)
 // ---------------------------------------------------------------------------
-async function renderTransactionHistoryView() {
-  const container = document.getElementById('quests-container');
-  if (!container) return;
-
+function renderEmployerHubView(container) {
   if (!connectedWallet.connected || !connectedWallet.address) {
     container.innerHTML = `
-      <div style="grid-column: 1 / -1; text-align: center; padding: 4.5rem 1.5rem; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 20px;">
-        <div style="font-size: 2.8rem; margin-bottom: 0.85rem;">📜</div>
-        <h3 style="font-size: 1.35rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.5rem;">Connect Wallet to View Transaction History</h3>
-        <p style="font-size: 0.92rem; color: var(--text-muted); max-width: 480px; margin: 0 auto 1.75rem; line-height: 1.5;">
-          Connect your wallet to inspect your immutable on-chain USDM escrow history across all devices and sessions.
-        </p>
-        <button class="btn-create-quest" onclick="openWalletModal()" style="display: inline-flex; margin: 0 auto;">
-          <span>⚡ Connect Wallet Now</span>
+      <div>
+        <div class="page-header-box">
+          <div class="page-header-left">
+            <h1 class="page-title">💼 Employer Escrow Hub</h1>
+            <p class="page-subtitle">Publish quests, fund Compact smart contract escrows, and review quester submissions.</p>
+          </div>
+        </div>
+        <div style="text-align: center; padding: 4.5rem 1.5rem; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 20px;">
+          <div style="font-size: 2.8rem; margin-bottom: 0.85rem;">🔒</div>
+          <h3 style="font-size: 1.35rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.5rem;">Connect Wallet to Access Employer Hub</h3>
+          <p style="font-size: 0.92rem; color: var(--text-muted); max-width: 480px; margin: 0 auto 1.75rem; line-height: 1.5;">
+            Connect your employer wallet on Midnight Preview to create escrows and review proof submissions.
+          </p>
+          <button class="btn-create-quest" onclick="openWalletModal()" style="display: inline-flex; margin: 0 auto;">
+            <span>⚡ Connect Wallet Now</span>
+          </button>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const employerQuests = allQuests.filter(q => q.employerWallet && q.employerWallet.toLowerCase() === connectedWallet.address.toLowerCase());
+  const totalLocked = employerQuests.filter(q => q.status === 'Open').reduce((acc, q) => acc + q.rewardUsdm, 0);
+
+  container.innerHTML = `
+    <div>
+      <div class="page-header-box">
+        <div class="page-header-left">
+          <h1 class="page-title">💼 Employer Escrow Hub</h1>
+          <p class="page-subtitle">Publish quests, fund Compact smart contract escrows, and review quester submissions.</p>
+        </div>
+        <button class="btn-create-quest" onclick="openCreateQuestModal()">
+          <span>+ Create & Escrow Quest</span>
         </button>
+      </div>
+
+      <div class="tx-summary-grid" style="margin-bottom: 2rem;">
+        <div class="tx-summary-card gold">
+          <div class="tx-summary-label">Your Active Escrow Locked</div>
+          <div class="tx-summary-val gold">$${totalLocked.toLocaleString()} USDM</div>
+        </div>
+        <div class="tx-summary-card blue">
+          <div class="tx-summary-label">Quests Created</div>
+          <div class="tx-summary-val blue">${employerQuests.length} Total</div>
+        </div>
+        <div class="tx-summary-card emerald">
+          <div class="tx-summary-label">Settled & Completed</div>
+          <div class="tx-summary-val emerald">${employerQuests.filter(q => q.status === 'Paid').length} Paid</div>
+        </div>
+      </div>
+
+      <div class="dashboard-section-header">
+        <div class="dashboard-section-title">Your Published Bounties</div>
+      </div>
+
+      <div class="quests-grid">
+        ${employerQuests.length === 0 ? `
+          <div style="grid-column: 1 / -1; text-align: center; padding: 3rem 1.5rem; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 16px;">
+            <div style="color: var(--text-dim); margin-bottom: 0.75rem;">You haven't published any bounties yet.</div>
+            <button class="btn-create-quest" onclick="openCreateQuestModal()" style="display: inline-flex; margin: 0 auto;"><span>+ Create First Quest</span></button>
+          </div>
+        ` : employerQuests.map(renderQuestCardHtml).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// 5. REPUTATION & LEADERBOARD VIEW (Independent Page)
+// ---------------------------------------------------------------------------
+async function renderLeaderboardView(container) {
+  container.innerHTML = `
+    <div>
+      <div class="page-header-box">
+        <div class="page-header-left">
+          <h1 class="page-title">👑 Reputation & Cryptographers Leaderboard</h1>
+          <p class="page-subtitle">Verifiable on-chain reputation ranking and top USDM earners on Midnight Preview.</p>
+        </div>
+      </div>
+      <div style="text-align: center; padding: 3rem 1rem;">
+        <div style="font-size: 1.2rem; color: var(--gold-primary); font-weight: 700;">⏳ Loading cryptographic reputation ledger...</div>
+      </div>
+    </div>
+  `;
+
+  try {
+    const res = await fetch('/api/leaderboard');
+    const data = await res.json();
+    const list = data.leaderboard || [];
+
+    container.innerHTML = `
+      <div>
+        <div class="page-header-box">
+          <div class="page-header-left">
+            <h1 class="page-title">👑 Reputation & Cryptographers Leaderboard</h1>
+            <p class="page-subtitle">Verifiable on-chain reputation ranking and top USDM earners on Midnight Preview.</p>
+          </div>
+        </div>
+
+        <div style="background: var(--bg-surface); border: 1px solid var(--gold-border); border-radius: 20px; padding: 2rem;">
+          ${list.length === 0 ? `
+            <div style="text-align: center; padding: 3rem 1rem;">
+              <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">👑</div>
+              <h3 style="font-size: 1.25rem; font-weight: 800; color: var(--gold-primary); margin-bottom: 0.5rem;">Leaderboard Empty</h3>
+              <p style="font-size: 0.88rem; color: var(--text-muted);">Complete quests to earn USDM and appear on the Midnight reputation ledger.</p>
+            </div>
+          ` : `
+            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+              ${list.map((u, i) => `
+                <div style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-surface-elevated); padding: 1rem 1.25rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+                  <div style="display: flex; align-items: center; gap: 1rem;">
+                    <span style="font-weight: 900; font-size: 1.2rem; color: ${i === 0 ? 'var(--gold-primary)' : 'var(--text-muted)'};">#${i + 1}</span>
+                    <div>
+                      <div style="font-weight: 700; font-family: monospace; font-size: 0.85rem; color: #fff;">${truncateAddr(u.address)}</div>
+                      <div style="font-size: 0.75rem; color: var(--gold-secondary);">${u.tier} • Score: ${u.reputationScore}/100</div>
+                    </div>
+                  </div>
+                  <div style="text-align: right;">
+                    <div style="font-weight: 800; color: #60a5fa; font-size: 1.1rem;">${u.totalEarnedUsdm} USDM</div>
+                    <div style="font-size: 0.75rem; color: var(--emerald-green); font-weight: 600;">✓ ${u.successfulCount} Quests Solved</div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    showToast('Failed to load leaderboard', 'error');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 6. TRANSACTION HISTORY VIEW (Independent Page for Connected Wallet)
+// ---------------------------------------------------------------------------
+async function renderTransactionHistoryView(container) {
+  if (!connectedWallet.connected || !connectedWallet.address) {
+    container.innerHTML = `
+      <div>
+        <div class="page-header-box">
+          <div class="page-header-left">
+            <h1 class="page-title">📜 On-Chain Transaction History</h1>
+            <p class="page-subtitle">Persistent ledger transactions, escrow locks, refunds, and payout receipts for your connected wallet.</p>
+          </div>
+        </div>
+        <div style="text-align: center; padding: 4.5rem 1.5rem; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 20px;">
+          <div style="font-size: 2.8rem; margin-bottom: 0.85rem;">📜</div>
+          <h3 style="font-size: 1.35rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.5rem;">Connect Wallet to View Transaction History</h3>
+          <p style="font-size: 0.92rem; color: var(--text-muted); max-width: 480px; margin: 0 auto 1.75rem; line-height: 1.5;">
+            Connect your wallet to inspect your immutable on-chain USDM escrow history across all devices and sessions.
+          </p>
+          <button class="btn-create-quest" onclick="openWalletModal()" style="display: inline-flex; margin: 0 auto;">
+            <span>⚡ Connect Wallet Now</span>
+          </button>
+        </div>
       </div>
     `;
     return;
   }
 
   container.innerHTML = `
-    <div style="grid-column: 1 / -1; text-align: center; padding: 3rem 1rem;">
-      <div style="font-size: 1.2rem; color: var(--gold-primary); font-weight: 700;">⏳ Fetching on-chain transaction history...</div>
+    <div>
+      <div class="page-header-box">
+        <div class="page-header-left">
+          <h1 class="page-title">📜 On-Chain Transaction History</h1>
+          <p class="page-subtitle">Persistent ledger transactions, escrow locks, refunds, and payout receipts for your connected wallet.</p>
+        </div>
+      </div>
+      <div style="text-align: center; padding: 3rem 1rem;">
+        <div style="font-size: 1.2rem; color: var(--gold-primary); font-weight: 700;">⏳ Fetching on-chain transaction history...</div>
+      </div>
     </div>
   `;
 
@@ -834,6 +1157,14 @@ async function renderTransactionHistoryView() {
 
     container.innerHTML = `
       <div class="tx-history-wrapper">
+        <!-- Page Header -->
+        <div class="page-header-box">
+          <div class="page-header-left">
+            <h1 class="page-title">📜 On-Chain Transaction History</h1>
+            <p class="page-subtitle">Persistent ledger transactions, escrow locks, refunds, and payout receipts for your connected wallet.</p>
+          </div>
+        </div>
+
         <!-- Summary Cards Ribbon -->
         <div class="tx-summary-grid">
           <div class="tx-summary-card gold">
@@ -980,54 +1311,6 @@ function copyTxHash(hash) {
 }
 
 // ---------------------------------------------------------------------------
-// Reputation & Leaderboard
-// ---------------------------------------------------------------------------
-async function renderLeaderboardView() {
-  const container = document.getElementById('quests-container');
-  try {
-    const res = await fetch('/api/leaderboard');
-    const data = await res.json();
-    const list = data.leaderboard || [];
-
-    if (list.length === 0) {
-      container.innerHTML = `
-        <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 20px;">
-          <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">👑</div>
-          <h3 style="font-size: 1.25rem; font-weight: 800; color: var(--gold-primary); margin-bottom: 0.5rem;">Leaderboard Empty</h3>
-          <p style="font-size: 0.88rem; color: var(--text-muted);">Complete quests to earn USDM and appear on the Midnight reputation ledger.</p>
-        </div>
-      `;
-      return;
-    }
-
-    container.innerHTML = `
-      <div style="grid-column: 1 / -1; background: var(--bg-surface); border: 1px solid var(--gold-border); border-radius: 20px; padding: 2rem;">
-        <h2 style="font-size: 1.5rem; font-weight: 800; color: var(--gold-primary); margin-bottom: 1.5rem;">👑 Top Cryptographers & Bounties Leaderboard</h2>
-        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-          ${list.map((u, i) => `
-            <div style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-surface-elevated); padding: 1rem 1.25rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
-              <div style="display: flex; align-items: center; gap: 1rem;">
-                <span style="font-weight: 900; font-size: 1.2rem; color: ${i === 0 ? 'var(--gold-primary)' : 'var(--text-muted)'};">#${i + 1}</span>
-                <div>
-                  <div style="font-weight: 700; font-family: monospace; font-size: 0.85rem; color: #fff;">${truncateAddr(u.address)}</div>
-                  <div style="font-size: 0.75rem; color: var(--gold-secondary);">${u.tier} • Score: ${u.reputationScore}/100</div>
-                </div>
-              </div>
-              <div style="text-align: right;">
-                <div style="font-weight: 800; color: #60a5fa; font-size: 1.1rem;">${u.totalEarnedUsdm} USDM</div>
-                <div style="font-size: 0.75rem; color: var(--emerald-green); font-weight: 600;">✓ ${u.successfulCount} Quests Solved</div>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
-  } catch (err) {
-    showToast('Failed to load leaderboard', 'error');
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Slide-Over Drawer & Proof Submissions (Links + Screenshots)
 // ---------------------------------------------------------------------------
 function openQuestDrawer(questId) {
@@ -1040,7 +1323,6 @@ function openQuestDrawer(questId) {
   document.getElementById('drawer-reward-val').innerText = `${quest.rewardUsdm} USDM`;
   document.getElementById('drawer-quest-desc').innerText = quest.description;
 
-  // Requirements guidance
   const reqsBox = document.getElementById('drawer-requirements-box');
   const reqsText = document.getElementById('drawer-requirements-text');
   if (quest.submissionRequirements && quest.submissionRequirements.trim()) {
@@ -1055,7 +1337,6 @@ function openQuestDrawer(questId) {
   badge.className = `proof-mode-badge ${isZK ? 'zk' : 'attestation'}`;
   badge.innerText = isZK ? '⚡ Automated ZK Proof' : '👤 Employer Attestation';
 
-  // Configure drawer sections according to quest type
   const secretSection = document.getElementById('drawer-secret-section');
   const linksSection = document.getElementById('drawer-links-section');
   const screenshotSection = document.getElementById('drawer-screenshot-section');
@@ -1083,7 +1364,6 @@ function openQuestDrawer(questId) {
     screenshotSection.style.display = 'block';
   }
 
-  // Clear inputs
   document.getElementById('drawer-solution-input').value = '';
   document.getElementById('drawer-link-input-1').value = '';
   document.getElementById('drawer-link-input-2').value = '';
@@ -1177,10 +1457,8 @@ async function submitActiveQuestProof() {
   const notes = document.getElementById('drawer-notes-input').value.trim();
 
   const links = [link1, link2].filter(Boolean);
-
   const qType = selectedQuest.questType || 'zk_secret';
 
-  // Basic validation based on quest type
   if (qType === 'zk_secret' && !solution) {
     showToast('Please enter your secret answer/solution', 'error');
     return;
@@ -1223,6 +1501,7 @@ async function submitActiveQuestProof() {
       await refreshWalletBalances();
       await loadPlatformStats();
       await loadQuests();
+      switchView(activeView);
 
       setTimeout(() => {
         closeDrawer();
@@ -1230,7 +1509,8 @@ async function submitActiveQuestProof() {
     } else {
       showToast('Proof submitted for employer review!', 'info');
       closeDrawer();
-      loadQuests();
+      await loadQuests();
+      switchView(activeView);
     }
   } catch (err) {
     showToast(err.message, 'error');
@@ -1254,7 +1534,6 @@ function openCreateQuestModal() {
     balEl.innerText = `${displayVal} USDM`;
   }
 
-  // Reset balance warning
   const warningEl = document.getElementById('create-balance-warning');
   if (warningEl) warningEl.classList.remove('active');
 
@@ -1304,7 +1583,6 @@ function handleQuestTypeChange(type) {
 function checkCreateQuestBalance(rewardVal) {
   const warning = document.getElementById('create-balance-warning');
   const warningText = document.getElementById('create-balance-warning-text');
-  const submitBtn = document.getElementById('btn-submit-create-quest');
   if (!warning) return;
 
   const rewardNum = parseFloat(rewardVal);
@@ -1335,7 +1613,6 @@ async function handleCreateQuestSubmit(e) {
   const rewardNum = parseFloat(rewardUsdm);
   const userBalance = parseFloat(connectedWallet.usdm) || 0;
 
-  // Strict client-side balance check
   if (rewardNum > userBalance) {
     showToast(`Insufficient USDM balance! You have ${userBalance.toFixed(2)} USDM, but need ${rewardNum} USDM.`, 'error');
     const warning = document.getElementById('create-balance-warning');
@@ -1382,12 +1659,8 @@ async function handleCreateQuestSubmit(e) {
     document.getElementById('create-quest-form').reset();
     await refreshWalletBalances();
     await loadPlatformStats();
-    
-    if (activeView === 'mybounties') {
-      renderMyBountiesView();
-    } else {
-      await loadQuests();
-    }
+    await loadQuests();
+    switchView(activeView);
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
   } finally {

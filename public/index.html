@@ -34,7 +34,11 @@
     <!-- Side Panel Navigation Links -->
     <nav class="sidebar-nav">
       <div class="sidebar-section-label">Navigation Menu</div>
-      <button class="sidebar-nav-item active" id="side-nav-explore" onclick="switchView('explore'); closeSidebar();">
+      <button class="sidebar-nav-item active" id="side-nav-dashboard" onclick="switchView('dashboard'); closeSidebar();">
+        <span class="nav-icon">📊</span>
+        <span class="nav-text">Dashboard</span>
+      </button>
+      <button class="sidebar-nav-item" id="side-nav-explore" onclick="switchView('explore'); closeSidebar();">
         <span class="nav-icon">🔍</span>
         <span class="nav-text">Explore Quests</span>
       </button>
@@ -77,7 +81,7 @@
           <span class="hamburger-bar"></span>
           <span class="hamburger-bar"></span>
         </button>
-        <a href="#" class="brand-logo" onclick="switchView('explore'); return false;">
+        <a href="#" class="brand-logo" onclick="switchView('dashboard'); return false;">
           <div class="brand-logo-gem">Q</div>
           <span class="brand-title">QuestPay</span>
         </a>
@@ -100,62 +104,9 @@
     </div>
   </header>
 
-  <!-- Hero Section -->
-  <section class="hero-section container">
-    <div class="hero-tagline">
-      <span>🛡️ Zero-Knowledge Escrow Protocol</span>
-    </div>
-    <h1 class="hero-headline">
-      Decentralized <span>ZK Quest Escrow</span> Marketplace
-    </h1>
-    <p class="hero-subtitle">
-      Lock bounties in privacy-preserving Compact smart contracts. Submit cryptographic proofs, solve developer riddles, and receive instant USDM payouts on Midnight Preview.
-    </p>
-
-    <!-- Platform Stats Ribbon -->
-    <div class="stats-ribbon">
-      <div class="stat-card">
-        <div class="stat-label">Total USDM Escrowed</div>
-        <div class="stat-value gold" id="stat-escrow-val">$0 USDM</div>
-      </div>
-      <div class="stat-card blue">
-        <div class="stat-label">Active Quests</div>
-        <div class="stat-value blue" id="stat-active-val">0 Active</div>
-      </div>
-      <div class="stat-card emerald">
-        <div class="stat-label">Verification Rate</div>
-        <div class="stat-value emerald" id="stat-rate-val">100% Verified</div>
-      </div>
-      <div class="stat-card red">
-        <div class="stat-label">Completed & Paid</div>
-        <div class="stat-value" id="stat-completed-val">0 Paid</div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Main View Container -->
-  <main class="container">
-    <!-- Controls Bar -->
-    <div class="controls-bar" id="controls-bar">
-      <div class="category-filters">
-        <button class="filter-chip active" onclick="filterCategory('all', this)">All Bounties</button>
-        <button class="filter-chip" onclick="filterCategory('ZK Cryptography', this)">ZK Cryptography</button>
-        <button class="filter-chip" onclick="filterCategory('Smart Contract Audit', this)">Smart Contract Audit</button>
-        <button class="filter-chip" onclick="filterCategory('Research & Benchmarking', this)">Research & Telemetry</button>
-        <button class="filter-chip" onclick="filterCategory('Social & Community', this)">Social & Community</button>
-      </div>
-
-      <div class="action-buttons-group">
-        <button class="btn-create-quest" onclick="openCreateQuestModal()">
-          <span>+ Create & Fund Quest</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- Active Quests Grid & Dynamic Views -->
-    <div class="quests-grid" id="quests-container">
-      <!-- Injected via app.js -->
-    </div>
+  <!-- Dynamic Main View Container (Independent for each page) -->
+  <main class="container" id="main-view-container" style="padding-top: 1.5rem; padding-bottom: 4rem;">
+    <!-- Injected dynamically via app.js -->
   </main>
 
   <!-- Slide-Over Drawer (Right Panel for Quest Details & Solution Submission) -->
