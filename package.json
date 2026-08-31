@@ -1,0 +1,30 @@
+﻿{
+  "name": "questpay",
+  "version": "1.0.0",
+  "description": "QuestPay - Privacy-Preserving Web3 Quest & USDM Escrow Marketplace on Midnight Preview",
+  "main": "server.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs"
+  },
+  "keywords": [
+    "midnightntwrk",
+    "compact",
+    "cardano",
+    "usdm",
+    "cross-chain",
+    "escrow",
+    "zero-knowledge",
+    "bounty",
+    "web3"
+  ],
+  "author": "QuestPay Team",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,153 @@
+﻿// ============================================================================
+// QuestPay - Privacy-Preserving Quest & Escrow Smart Contract
+// Language: Midnight Compact 0.17+ / Midnight Preview Network
+// ============================================================================
+
+pragma language_version >= 0.17.0;
+
+import CompactStandardLibrary;
+
+// Quest status states
+enum QuestStatus {
+    Open,
+    Accepted,
+    ProofSubmitted,
+    Verified,
+    Paid,
+    Cancelled
+}
+
+// Verification proof modes
+enum ProofType {
+    AutomatedZkSecret,
+    EmployerAttestation
+}
+
+// Structure stored in public contract state for each Quest
+export struct QuestRecord {
+    employer: Bytes<32>,
+    quester: Bytes<32>,
+    reward_usdm: Uint<64>,
+    proof_type: ProofType,
+    secret_commitment: Bytes<32>, // SHA-256 / Poseidon hash of solution
+    status: QuestStatus,
+    deadline_timestamp: Uint<64>,
+    created_at: Uint<64>
+}
+
+// Contract Ledger State (Public on Midnight Preview)
+export ledger quests: Map<Uint<64>, QuestRecord>;
+export ledger total_escrow_locked_usdm: Uint<64>;
+export ledger completed_quests_count: Uint<64>;
+
+// ============================================================================
+// Circuits (Zero-Knowledge Verifiable Transitions)
+// ============================================================================
+
+// 1. Employer creates and escrows USDM for a new quest
+export circuit create_quest(
+    quest_id: Uint<64>,
+    reward_usdm: Uint<64>,
+    proof_type: ProofType,
+    secret_commitment: Bytes<32>,
+    deadline: Uint<64>
+): [] {
+    assert(!quests.member(quest_id), "Quest with this ID already exists");
+    assert(reward_usdm > 0, "Reward amount must be greater than zero");
+
+    // Capture employer public key / address
+    const employer_pk = own_public_key();
+
+    // Lock quest escrow record into ledger
+    quests.insert(quest_id, QuestRecord {
+        employer: employer_pk,
+        quester: 0x0000000000000000000000000000000000000000000000000000000000000000,
+        reward_usdm: reward_usdm,
+        proof_type: proof_type,
+        secret_commitment: secret_commitment,
+        status: QuestStatus.Open,
+        deadline_timestamp: deadline,
+        created_at: current_timestamp()
+    });
+
+    total_escrow_locked_usdm = total_escrow_locked_usdm + reward_usdm;
+}
+
+// 2. Quester accepts an open quest
+export circuit accept_quest(quest_id: Uint<64>): [] {
+    assert(quests.member(quest_id), "Quest does not exist");
+    const q = quests.lookup(quest_id);
+    assert(q.status == QuestStatus.Open, "Quest is not open for acceptance");
+
+    const quester_pk = own_public_key();
+    assert(quester_pk != q.employer, "Employer cannot accept their own quest");
+
+    quests.insert(quest_id, QuestRecord {
+        employer: q.employer,
+        quester: quester_pk,
+        reward_usdm: q.reward_usdm,
+        proof_type: q.proof_type,
+        secret_commitment: q.secret_commitment,
+        status: QuestStatus.Accepted,
+        deadline_timestamp: q.deadline_timestamp,
+        created_at: q.created_at
+    });
+}
+
+// 3. Automated Zero-Knowledge Proof Submission & Escrow Release
+// The quester provides the private preimage (secret answer);
+// The circuit computes the hash inside the ZK witness and asserts it matches secret_commitment.
+export circuit submit_and_verify_zk_proof(
+    quest_id: Uint<64>,
+    private_secret_answer: Opaque<"string">
+): [] {
+    assert(quests.member(quest_id), "Quest does not exist");
+    const q = quests.lookup(quest_id);
+    assert(q.status == QuestStatus.Accepted || q.status == QuestStatus.Open, "Invalid quest status for proof verification");
+    assert(q.proof_type == ProofType.AutomatedZkSecret, "Quest does not use automated ZK verification");
+
+    // Cryptographically hash the private secret in zero-knowledge
+    const computed_hash = persistent_hash<Opaque<"string">>(private_secret_answer);
+
+    // Assert zero-knowledge equality against on-chain public commitment
+    assert(computed_hash == q.secret_commitment, "Zero-knowledge verification failed: invalid solution proof");
+
+    const recipient = own_public_key();
+
+    // Transition state and release escrow
+    quests.insert(quest_id, QuestRecord {
+        employer: q.employer,
+        quester: recipient,
+        reward_usdm: q.reward_usdm,
+        proof_type: q.proof_type,
+        secret_commitment: q.secret_commitment,
+        status: QuestStatus.Paid,
+        deadline_timestamp: q.deadline_timestamp,
+        created_at: q.created_at
+    });
+
+    total_escrow_locked_usdm = total_escrow_locked_usdm - q.reward_usdm;
+    completed_quests_count = completed_quests_count + 1;
+}
+
+// 4. Employer Manual Attestation & Release
+export circuit employer_approve_and_release(quest_id: Uint<64>): [] {
+    assert(quests.member(quest_id), "Quest does not exist");
+    const q = quests.lookup(quest_id);
+    assert(own_public_key() == q.employer, "Only the quest creator can approve this submission");
+    assert(q.status == QuestStatus.ProofSubmitted || q.status == QuestStatus.Accepted, "No pending submission to approve");
+
+    quests.insert(quest_id, QuestRecord {
+        employer: q.employer,
+        quester: q.quester,
+        reward_usdm: q.reward_usdm,
+        proof_type: q.proof_type,
+        secret_commitment: q.secret_commitment,
+        status: QuestStatus.Paid,
+        deadline_timestamp: q.deadline_timestamp,
+        created_at: q.created_at
+    });
+
+    total_escrow_locked_usdm = total_escrow_locked_usdm - q.reward_usdm;
+    completed_quests_count = completed_quests_count + 1;
+}
