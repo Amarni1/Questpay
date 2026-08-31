@@ -192,7 +192,7 @@ body {
   box-shadow: 0 0 8px var(--sapphire-blue);
 }
 
-/* Separate USDM Balance Card */
+/* Separate USDM & DUST Balance Cards */
 .header-balance-card {
   display: flex;
   align-items: center;
@@ -205,9 +205,18 @@ body {
   transition: var(--transition-smooth);
 }
 
-.header-balance-card:hover {
+.header-balance-card.usdm:hover {
   border-color: rgba(56, 117, 246, 0.4);
   box-shadow: 0 0 15px var(--sapphire-glow);
+}
+
+.header-balance-card.dust {
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+.header-balance-card.dust:hover {
+  border-color: rgba(16, 185, 129, 0.5);
+  box-shadow: 0 0 15px var(--emerald-glow);
 }
 
 .balance-card-left {
@@ -230,23 +239,23 @@ body {
   color: var(--text-dim);
   text-transform: uppercase;
   font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .balance-main-num {
   font-size: 0.92rem;
   font-weight: 800;
-  color: #60a5fa;
   letter-spacing: -0.01em;
 }
 
-.dust-pill {
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+.balance-main-num.blue {
+  color: #60a5fa;
+  text-shadow: 0 0 10px rgba(96, 165, 250, 0.3);
+}
+
+.balance-main-num.emerald {
   color: #34d399;
-  font-size: 0.75rem;
-  font-weight: 700;
-  padding: 0.2rem 0.55rem;
-  border-radius: 9999px;
+  text-shadow: 0 0 10px rgba(52, 211, 153, 0.3);
 }
 
 /* Separate Wallet Card */
