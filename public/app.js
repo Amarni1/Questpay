@@ -37,6 +37,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 function initEventListeners() {
+  // Sidebar Drawer Navigation
+  window.toggleSidebar = toggleSidebar;
+  window.openSidebar = openSidebar;
+  window.closeSidebar = closeSidebar;
+
+  // Wallet Connection & Modals
   window.openWalletModal = openWalletModal;
   window.closeWalletModal = closeWalletModal;
   window.handleConnectMidnightExtension = handleConnectMidnightExtension;
@@ -45,8 +51,13 @@ function initEventListeners() {
   window.disconnectWallet = disconnectWallet;
   window.copyConnectedAddress = copyConnectedAddress;
 
+  // Navigation & Filtering
   window.switchView = switchView;
   window.filterCategory = filterCategory;
+  window.filterTransactions = filterTransactions;
+  window.copyTxHash = copyTxHash;
+
+  // Quest Drawer & Proof Submissions
   window.openQuestDrawer = openQuestDrawer;
   window.closeDrawer = closeDrawer;
   window.handleSolutionInput = handleSolutionInput;
@@ -54,6 +65,7 @@ function initEventListeners() {
   window.handleScreenshotUpload = handleScreenshotUpload;
   window.removeScreenshot = removeScreenshot;
 
+  // Quest Creation & Balance Validation
   window.openCreateQuestModal = openCreateQuestModal;
   window.closeCreateQuestModal = closeCreateQuestModal;
   window.handleCreateQuestSubmit = handleCreateQuestSubmit;
@@ -61,12 +73,40 @@ function initEventListeners() {
   window.handleQuestTypeChange = handleQuestTypeChange;
   window.checkCreateQuestBalance = checkCreateQuestBalance;
 
+  // Quest Cancellation & Deletion
   window.confirmDeleteQuest = confirmDeleteQuest;
   window.closeConfirmDialog = closeConfirmDialog;
   window.executeConfirmDelete = executeConfirmDelete;
+}
 
-  window.filterTransactions = filterTransactions;
-  window.copyTxHash = copyTxHash;
+// ---------------------------------------------------------------------------
+// Side Panel Drawer Navigation
+// ---------------------------------------------------------------------------
+
+function toggleSidebar() {
+  const panel = document.getElementById('sidebar-panel');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  if (!panel) return;
+  const isActive = panel.classList.contains('active');
+  if (isActive) {
+    closeSidebar();
+  } else {
+    openSidebar();
+  }
+}
+
+function openSidebar() {
+  const panel = document.getElementById('sidebar-panel');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  if (panel) panel.classList.add('active');
+  if (backdrop) backdrop.classList.add('active');
+}
+
+function closeSidebar() {
+  const panel = document.getElementById('sidebar-panel');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  if (panel) panel.classList.remove('active');
+  if (backdrop) backdrop.classList.remove('active');
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +171,7 @@ function renderDiscoveredWallets() {
   } else {
     html += `
       <div style="padding: 0.85rem 1rem; background: rgba(255,255,255,0.02); border: 1px dashed var(--border-subtle); border-radius: 12px; font-size: 0.82rem; color: var(--text-dim); text-align: center;">
-        No active Lace Midnight Preview extension detected. (You can also paste your address below).
+        No active Lace Midnight Preview extension detected. (You can paste a custom Midnight address below).
       </div>
     `;
   }
@@ -293,7 +333,7 @@ function copyConnectedAddress() {
 }
 
 // ---------------------------------------------------------------------------
-// Balance Fetching & Header Synchronization
+// Balance Fetching & Clean Header Synchronization (Stacked Under Address)
 // ---------------------------------------------------------------------------
 
 async function refreshWalletBalances() {
@@ -333,22 +373,29 @@ function stopBalancePolling() {
 }
 
 function updateUIHeaderWidgets() {
-  const usdmEl = document.getElementById('header-usdm-val');
   const walletCard = document.getElementById('header-wallet-card');
+  const sideAddr = document.getElementById('sidebar-wallet-addr');
+  const sideUsdm = document.getElementById('sidebar-wallet-usdm');
 
-  if (connectedWallet.connected && connectedWallet.address) {
-    const usdmDisplay = connectedWallet.usdm !== null ? connectedWallet.usdm : '0.00';
-    if (usdmEl) usdmEl.innerText = `${usdmDisplay} USDM`;
-  } else {
-    if (usdmEl) usdmEl.innerText = '-- USDM';
-  }
+  const isConn = connectedWallet.connected && connectedWallet.address;
+  const usdmDisplay = isConn && connectedWallet.usdm !== null ? connectedWallet.usdm : '0.00';
 
+  // 1. Update Header Wallet Card (Address with Available USDM balance stacked underneath)
   if (walletCard) {
-    if (connectedWallet.connected && connectedWallet.address) {
+    if (isConn) {
       walletCard.innerHTML = `
         <div class="wallet-badge-connected" onclick="openWalletModal()" title="${connectedWallet.address}">
-          <span style="font-size: 0.9rem;">🌙</span>
-          <span style="font-weight: 700; font-size: 0.85rem; color: #fff;">${truncateAddr(connectedWallet.address)}</span>
+          <div class="wallet-avatar-icon">🌙</div>
+          <div class="wallet-info-stacked">
+            <div class="wallet-addr-row">
+              <span class="wallet-addr-text">${truncateAddr(connectedWallet.address)}</span>
+              <span class="wallet-badge-network">Preview</span>
+            </div>
+            <div class="wallet-balance-subline">
+              <span style="font-size: 0.72rem;">💰 Available:</span>
+              <span class="usdm-bal-val">${usdmDisplay} USDM</span>
+            </div>
+          </div>
         </div>
       `;
     } else {
@@ -357,6 +404,17 @@ function updateUIHeaderWidgets() {
           <span>⚡ Connect Wallet</span>
         </button>
       `;
+    }
+  }
+
+  // 2. Update Sidebar Mini Wallet Box
+  if (sideAddr && sideUsdm) {
+    if (isConn) {
+      sideAddr.innerText = truncateAddr(connectedWallet.address);
+      sideUsdm.innerText = `💰 ${usdmDisplay} USDM Available`;
+    } else {
+      sideAddr.innerText = 'Wallet Not Connected';
+      sideUsdm.innerText = 'Click to Connect Wallet';
     }
   }
 }
@@ -507,11 +565,10 @@ function renderQuestsGrid(quests) {
 // ---------------------------------------------------------------------------
 function switchView(view) {
   activeView = view;
-  document.querySelectorAll('.nav-pill-btn').forEach(btn => btn.classList.remove('active'));
   
-  let targetBtnId = `nav-${view}`;
-  if (view === 'mybounties') targetBtnId = 'nav-mybounties';
-  const activeBtn = document.getElementById(targetBtnId);
+  // Update sidebar active buttons
+  document.querySelectorAll('.sidebar-nav-item').forEach(btn => btn.classList.remove('active'));
+  const activeBtn = document.getElementById(`side-nav-${view}`);
   if (activeBtn) activeBtn.classList.add('active');
 
   const controlsBar = document.getElementById('controls-bar');

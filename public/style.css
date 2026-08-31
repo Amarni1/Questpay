@@ -63,16 +63,236 @@ body {
 }
 
 /* ==========================================================================
-   Header & Navigation
+   Side Panel Navigation (Collapsible Sidebar)
+   ========================================================================== */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.sidebar-backdrop.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.sidebar-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 320px;
+  max-width: 85vw;
+  background: var(--bg-obsidian);
+  border-right: 1px solid var(--gold-border);
+  box-shadow: 10px 0 50px rgba(0, 0, 0, 0.9), 0 0 30px var(--gold-glow);
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(-100%);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 1.5rem;
+  overflow-y: auto;
+}
+
+.sidebar-panel.active {
+  transform: translateX(0);
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.btn-close-sidebar {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: var(--transition-smooth);
+}
+
+.btn-close-sidebar:hover {
+  background: var(--ruby-red);
+  color: #fff;
+  border-color: var(--ruby-red);
+}
+
+/* Sidebar Wallet Mini Box */
+.sidebar-wallet-box {
+  background: var(--bg-surface-elevated);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sidebar-wallet-box:hover {
+  border-color: var(--gold-primary);
+  background: rgba(243, 186, 47, 0.04);
+}
+
+.sidebar-wallet-icon {
+  font-size: 1.4rem;
+}
+
+.sidebar-wallet-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-wallet-addr {
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: monospace;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-wallet-usdm {
+  font-size: 0.75rem;
+  color: #60a5fa;
+  font-weight: 600;
+}
+
+/* Sidebar Nav Items */
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  flex: 1;
+}
+
+.sidebar-section-label {
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-dim);
+  margin-bottom: 0.5rem;
+  padding-left: 0.5rem;
+}
+
+.sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  padding: 0.8rem 1rem;
+  border-radius: 12px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.sidebar-nav-item:hover {
+  background: var(--bg-surface-elevated);
+  color: var(--text-main);
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+.sidebar-nav-item.active {
+  background: rgba(243, 186, 47, 0.1);
+  border-color: var(--gold-border);
+  color: var(--gold-primary);
+  font-weight: 700;
+  box-shadow: 0 0 16px var(--gold-glow);
+}
+
+.sidebar-nav-item .nav-icon {
+  font-size: 1.15rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+}
+
+.sidebar-footer {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.sidebar-create-btn {
+  background: var(--gold-gradient);
+  color: #000;
+  font-weight: 800;
+  font-size: 0.88rem;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 0 16px var(--gold-glow);
+  transition: transform 0.2s ease;
+  text-align: center;
+}
+
+.sidebar-create-btn:hover {
+  transform: translateY(-2px);
+}
+
+.sidebar-net-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  justify-content: center;
+}
+
+/* ==========================================================================
+   Header & Unified Wallet Card (With Balance Stacked Under Address)
    ========================================================================== */
 .header {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(6, 7, 9, 0.85);
+  background: rgba(6, 7, 9, 0.9);
   backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--border-subtle);
-  padding: 0.9rem 0;
+  padding: 0.75rem 0;
 }
 
 .header-inner {
@@ -82,89 +302,44 @@ body {
   gap: 1.5rem;
 }
 
-.brand-logo {
+.header-left {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  text-decoration: none;
-  font-size: 1.4rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--text-main);
+  gap: 1rem;
 }
 
-.brand-logo-gem {
-  width: 36px;
-  height: 36px;
-  background: var(--gold-gradient);
-  border-radius: 10px;
+.btn-sidebar-toggle {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--gold-primary);
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-weight: 900;
-  color: #000;
-  box-shadow: 0 0 20px var(--gold-glow);
-  position: relative;
-  overflow: hidden;
-}
-
-.brand-logo-gem::after {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: linear-gradient(45deg, transparent, rgba(255,255,255,0.4), transparent);
-  transform: rotate(45deg);
-  animation: shine 4s infinite;
-}
-
-@keyframes shine {
-  0% { transform: translateX(-100%) rotate(45deg); }
-  20%, 100% { transform: translateX(100%) rotate(45deg); }
-}
-
-.brand-title {
-  background: linear-gradient(135deg, #ffffff 40%, var(--gold-primary) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-/* Nav Pills */
-.nav-pills {
-  display: flex;
-  background: var(--bg-surface-elevated);
-  padding: 0.3rem;
-  border-radius: 9999px;
-  border: 1px solid var(--border-subtle);
-  gap: 0.2rem;
-}
-
-.nav-pill-btn {
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  font-size: 0.85rem;
-  font-weight: 600;
-  padding: 0.5rem 1.1rem;
-  border-radius: 9999px;
+  gap: 4px;
   cursor: pointer;
-  transition: var(--transition-smooth);
+  transition: all 0.2s ease;
+  padding: 0;
 }
 
-.nav-pill-btn:hover {
-  color: var(--text-main);
+.btn-sidebar-toggle:hover {
+  background: var(--gold-surface);
+  border-color: var(--gold-primary);
+  box-shadow: 0 0 14px var(--gold-glow);
+  transform: scale(1.05);
 }
 
-.nav-pill-btn.active {
-  background: var(--bg-glass-hover);
-  color: var(--gold-primary);
-  box-shadow: 0 0 12px var(--gold-glow);
-  border: 1px solid var(--gold-border);
+.hamburger-bar {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: var(--gold-primary);
+  border-radius: 2px;
 }
 
-/* Header Right Widgets (Clean & Separated) */
 .header-widgets {
   display: flex;
   align-items: center;
@@ -192,73 +367,7 @@ body {
   box-shadow: 0 0 8px var(--sapphire-blue);
 }
 
-/* Separate USDM & DUST Balance Cards */
-.header-balance-card {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  padding: 0.35rem 0.85rem;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  transition: var(--transition-smooth);
-}
-
-.header-balance-card.usdm:hover {
-  border-color: rgba(56, 117, 246, 0.4);
-  box-shadow: 0 0 15px var(--sapphire-glow);
-}
-
-.header-balance-card.dust {
-  border-color: rgba(16, 185, 129, 0.2);
-}
-
-.header-balance-card.dust:hover {
-  border-color: rgba(16, 185, 129, 0.5);
-  box-shadow: 0 0 15px var(--emerald-glow);
-}
-
-.balance-card-left {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.balance-icon {
-  font-size: 1rem;
-}
-
-.balance-text-group {
-  display: flex;
-  flex-direction: column;
-}
-
-.balance-sublabel {
-  font-size: 0.65rem;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
-.balance-main-num {
-  font-size: 0.92rem;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-}
-
-.balance-main-num.blue {
-  color: #60a5fa;
-  text-shadow: 0 0 10px rgba(96, 165, 250, 0.3);
-}
-
-.balance-main-num.emerald {
-  color: #34d399;
-  text-shadow: 0 0 10px rgba(52, 211, 153, 0.3);
-}
-
-/* Separate Wallet Card */
+/* Unified Connected Wallet Card (Address on top, USDM balance stacked under it) */
 .header-wallet-card {
   display: flex;
   align-items: center;
@@ -288,18 +397,74 @@ body {
 .wallet-badge-connected {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.75rem;
   background: var(--bg-surface);
   border: 1px solid var(--gold-border);
-  padding: 0.45rem 0.95rem;
-  border-radius: 12px;
+  padding: 0.4rem 0.95rem;
+  border-radius: 14px;
   cursor: pointer;
   transition: var(--transition-smooth);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
 }
 
 .wallet-badge-connected:hover {
   border-color: var(--gold-primary);
-  box-shadow: 0 0 15px var(--gold-glow);
+  box-shadow: 0 0 20px var(--gold-glow);
+  transform: translateY(-1px);
+}
+
+.wallet-avatar-icon {
+  font-size: 1.3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wallet-info-stacked {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  text-align: left;
+}
+
+.wallet-addr-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.wallet-addr-text {
+  font-family: monospace;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.wallet-badge-network {
+  background: rgba(56, 117, 246, 0.15);
+  border: 1px solid rgba(56, 117, 246, 0.35);
+  color: #93c5fd;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+.wallet-balance-subline {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.usdm-bal-val {
+  color: #60a5fa;
+  font-weight: 800;
+  font-family: monospace;
+  font-size: 0.82rem;
+  text-shadow: 0 0 10px rgba(96, 165, 250, 0.4);
 }
 
 /* Wallet Selection List Items in Modal */

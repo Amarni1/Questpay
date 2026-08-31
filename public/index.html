@@ -11,42 +11,86 @@
 </head>
 <body>
 
+  <!-- Side Panel Navigation (Opens & Closes) -->
+  <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()"></div>
+  <aside class="sidebar-panel" id="sidebar-panel">
+    <div class="sidebar-header">
+      <div class="sidebar-brand">
+        <div class="brand-logo-gem">Q</div>
+        <span class="brand-title">QuestPay</span>
+      </div>
+      <button class="btn-close-sidebar" onclick="closeSidebar()" title="Close Navigation">✕</button>
+    </div>
+
+    <!-- Connected Wallet Mini Box in Sidebar -->
+    <div class="sidebar-wallet-box" id="sidebar-wallet-box" onclick="openWalletModal(); closeSidebar();">
+      <div class="sidebar-wallet-icon">🌙</div>
+      <div class="sidebar-wallet-info">
+        <div class="sidebar-wallet-addr" id="sidebar-wallet-addr">Wallet Not Connected</div>
+        <div class="sidebar-wallet-usdm" id="sidebar-wallet-usdm">Click to Connect Wallet</div>
+      </div>
+    </div>
+
+    <!-- Side Panel Navigation Links -->
+    <nav class="sidebar-nav">
+      <div class="sidebar-section-label">Navigation Menu</div>
+      <button class="sidebar-nav-item active" id="side-nav-explore" onclick="switchView('explore'); closeSidebar();">
+        <span class="nav-icon">🔍</span>
+        <span class="nav-text">Explore Quests</span>
+      </button>
+      <button class="sidebar-nav-item" id="side-nav-mybounties" onclick="switchView('mybounties'); closeSidebar();">
+        <span class="nav-icon">⚔️</span>
+        <span class="nav-text">My Bounties</span>
+      </button>
+      <button class="sidebar-nav-item" id="side-nav-employer" onclick="switchView('employer'); closeSidebar();">
+        <span class="nav-icon">💼</span>
+        <span class="nav-text">Employer Hub</span>
+      </button>
+      <button class="sidebar-nav-item" id="side-nav-leaderboard" onclick="switchView('leaderboard'); closeSidebar();">
+        <span class="nav-icon">👑</span>
+        <span class="nav-text">Reputation</span>
+      </button>
+      <button class="sidebar-nav-item" id="side-nav-history" onclick="switchView('history'); closeSidebar();">
+        <span class="nav-icon">📜</span>
+        <span class="nav-text">Transaction History</span>
+      </button>
+    </nav>
+
+    <!-- Side Panel Footer Shortcut -->
+    <div class="sidebar-footer">
+      <button class="sidebar-create-btn" onclick="openCreateQuestModal(); closeSidebar();">
+        <span>+ Create & Fund Quest</span>
+      </button>
+      <div class="sidebar-net-info">
+        <span class="network-dot"></span>
+        <span>Midnight Preview • Compact Escrow</span>
+      </div>
+    </div>
+  </aside>
+
   <!-- Top Header -->
   <header class="header">
     <div class="container header-inner">
-      <a href="#" class="brand-logo">
-        <div class="brand-logo-gem">Q</div>
-        <span class="brand-title">QuestPay</span>
-      </a>
+      <div class="header-left">
+        <button class="btn-sidebar-toggle" id="btn-sidebar-toggle" onclick="toggleSidebar()" title="Toggle Navigation Menu">
+          <span class="hamburger-bar"></span>
+          <span class="hamburger-bar"></span>
+          <span class="hamburger-bar"></span>
+        </button>
+        <a href="#" class="brand-logo" onclick="switchView('explore'); return false;">
+          <div class="brand-logo-gem">Q</div>
+          <span class="brand-title">QuestPay</span>
+        </a>
+      </div>
 
-      <!-- Center Navigation Pills -->
-      <nav class="nav-pills">
-        <button class="nav-pill-btn active" id="nav-explore" onclick="switchView('explore')">Explore Quests</button>
-        <button class="nav-pill-btn" id="nav-mybounties" onclick="switchView('mybounties')">My Bounties</button>
-        <button class="nav-pill-btn" id="nav-employer" onclick="switchView('employer')">Employer Hub</button>
-        <button class="nav-pill-btn" id="nav-leaderboard" onclick="switchView('leaderboard')">Reputation</button>
-        <button class="nav-pill-btn" id="nav-history" onclick="switchView('history')">📜 History</button>
-      </nav>
-
-      <!-- Right Header Status & Wallet (Cleanly Separated) -->
+      <!-- Right Header: Network status + Unified Wallet Card (with USDM balance under address) -->
       <div class="header-widgets">
         <div class="network-badge">
           <div class="network-dot"></div>
           <span>Midnight Preview</span>
         </div>
 
-        <!-- Separate USDM Balance Card -->
-        <div class="header-balance-card usdm" id="header-balance-card" title="Your unshielded USDM balance on Midnight Preview">
-          <div class="balance-card-left">
-            <span class="balance-icon">💰</span>
-            <div class="balance-text-group">
-              <span class="balance-sublabel">Available USDM</span>
-              <span class="balance-main-num blue" id="header-usdm-val">-- USDM</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Separate Wallet Connect / Address Card -->
+        <!-- Unified Wallet Card (Address with Available USDM Balance stacked directly underneath) -->
         <div class="header-wallet-card" id="header-wallet-card">
           <button class="btn-wallet" id="btn-connect-wallet" onclick="openWalletModal()">
             <span>⚡ Connect Wallet</span>
