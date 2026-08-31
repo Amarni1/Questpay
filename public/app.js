@@ -50,7 +50,6 @@ function initEventListeners() {
   window.closeCreateQuestModal = closeCreateQuestModal;
   window.handleCreateQuestSubmit = handleCreateQuestSubmit;
   window.toggleSecretAnswerField = toggleSecretAnswerField;
-  window.openSeedQuestModal = openSeedQuestModal;
 }
 
 // ---------------------------------------------------------------------------
@@ -418,9 +417,15 @@ function renderQuestsGrid(quests) {
 
   if (quests.length === 0) {
     container.innerHTML = `
-      <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-dim);">
-        <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">No bounties found in this view.</p>
-        <button class="btn-create-quest" onclick="openCreateQuestModal()">+ Create First Bounty</button>
+      <div style="grid-column: 1 / -1; text-align: center; padding: 4.5rem 1.5rem; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 20px;">
+        <div style="font-size: 2.5rem; margin-bottom: 0.85rem;">🛡️</div>
+        <h3 style="font-size: 1.35rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.5rem;">No Active Bounties Yet</h3>
+        <p style="font-size: 0.92rem; color: var(--text-muted); max-width: 480px; margin: 0 auto 1.75rem; line-height: 1.5;">
+          There are currently no open bounties on Midnight Preview. Create a new quest to lock USDM into a Compact escrow contract!
+        </p>
+        <button class="btn-create-quest" onclick="openCreateQuestModal()" style="display: inline-flex; margin: 0 auto;">
+          <span>+ Create & Fund First Quest</span>
+        </button>
       </div>
     `;
     return;
@@ -437,7 +442,7 @@ function renderQuestsGrid(quests) {
         <div>
           <div class="card-top-tags">
             <span class="bounty-pill">${q.category}</span>
-            <span class="urgency-pill">⏱️ ${isPaid ? 'Completed' : '2h left'}</span>
+            <span class="urgency-pill">⏱️ ${isPaid ? 'Completed' : 'Active'}</span>
           </div>
           <h3 class="quest-title">${q.title}</h3>
           <p class="quest-desc">${q.description}</p>
@@ -487,6 +492,17 @@ async function renderLeaderboardView() {
     const res = await fetch('/api/leaderboard');
     const data = await res.json();
     const list = data.leaderboard || [];
+
+    if (list.length === 0) {
+      container.innerHTML = `
+        <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 20px;">
+          <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">👑</div>
+          <h3 style="font-size: 1.25rem; font-weight: 800; color: var(--gold-primary); margin-bottom: 0.5rem;">Leaderboard Empty</h3>
+          <p style="font-size: 0.88rem; color: var(--text-muted);">Complete quests to earn USDM and appear on the Midnight reputation ledger.</p>
+        </div>
+      `;
+      return;
+    }
 
     container.innerHTML = `
       <div style="grid-column: 1 / -1; background: var(--bg-surface); border: 1px solid var(--gold-border); border-radius: 20px; padding: 2rem;">
@@ -689,10 +705,6 @@ async function handleCreateQuestSubmit(e) {
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
   }
-}
-
-function openSeedQuestModal() {
-  showToast('Demo hints: Riddle = "recursion" • Bug = "overflow_check_missing"', 'info');
 }
 
 // ---------------------------------------------------------------------------

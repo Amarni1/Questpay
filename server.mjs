@@ -1,4 +1,4 @@
-﻿import express from 'express';
+import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
@@ -29,97 +29,12 @@ function computeSecretHash(secret) {
   return crypto.createHash('sha256').update(secret.trim().toLowerCase()).digest('hex');
 }
 
-// Initial seed quests showcasing real ZK, Compact & privacy bounties
+// Initial clean data structure for real on-chain bounties
 function getInitialSeedData() {
-  const answer1 = "recursion";
-  const answer2 = "overflow_check_missing";
-  const answer3 = "midnight_preview_zk";
-
   return {
-    quests: [
-      {
-        id: "quest-101",
-        contractQuestId: "101",
-        title: "ZK Cryptographic Riddle: The Self-Referential Circuit",
-        description: "Solve the riddle: 'I speak without a voice, I verify without revealing, I call upon myself to prove the unseen. What single computer science concept describes me?' Submit the single-word solution.",
-        category: "ZK Cryptography",
-        rewardUsdm: 75,
-        deadline: new Date(Date.now() + 86400000 * 2).toISOString(),
-        proofType: "AutomatedZkSecret",
-        secretCommitment: computeSecretHash(answer1),
-        employerWallet: "mn_addr_preview1employer001qzpz3v8s7k2d9x4c0a5f6e8r7t1w2y3z4a",
-        questerWallet: null,
-        status: "Open",
-        difficulty: "Medium",
-        skillTags: ["Zero-Knowledge", "Cryptography", "Algorithms"],
-        createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
-        escrowTxHash: "3a8f9c71b2d4e680a1c3e5f79b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c2e4b6d"
-      },
-      {
-        id: "quest-102",
-        contractQuestId: "102",
-        title: "Compact Smart Contract Vulnerability: Integer Edge-Case",
-        description: "Review this Compact escrow snippet. Identify the specific logic flaw in token transfer calculations when dealing with 64-bit unsigned bounds. Submit the exact keyword phrase identifying the bug.",
-        category: "Smart Contract Audit",
-        rewardUsdm: 250,
-        deadline: new Date(Date.now() + 86400000 * 3).toISOString(),
-        proofType: "AutomatedZkSecret",
-        secretCommitment: computeSecretHash(answer2),
-        employerWallet: "mn_addr_preview1employer002k8s9d4f2j1l5x7c9v3b6n8m0q1w2e3r4t",
-        questerWallet: null,
-        status: "Open",
-        difficulty: "Hard",
-        skillTags: ["Compact", "Security", "Smart Contracts", "Audit"],
-        createdAt: new Date(Date.now() - 3600000 * 12).toISOString(),
-        escrowTxHash: "8b1e4c7a9f2d0e3b5a7c9f1d3e5b7a9c1e3f5a7c9e1b3d5f7a9c1e3f5b7d9a1c"
-      },
-      {
-        id: "quest-103",
-        contractQuestId: "103",
-        title: "Midnight Preview Indexer Performance Benchmark",
-        description: "Benchmark GraphQL WebSocket query latency for 100 consecutive unshielded UTxO transaction updates across varied global nodes. Provide structured JSON telemetry and methodology.",
-        category: "Research & Benchmarking",
-        rewardUsdm: 120,
-        deadline: new Date(Date.now() + 86400000 * 4).toISOString(),
-        proofType: "EmployerAttestation",
-        secretCommitment: null,
-        employerWallet: "mn_addr_preview1researchorg8v7x6c5b4n3m2q1w9e8r7t6y5u4i3o2p1",
-        questerWallet: null,
-        status: "Open",
-        difficulty: "Expert",
-        skillTags: ["GraphQL", "WebSockets", "Node.js", "Performance"],
-        createdAt: new Date(Date.now() - 3600000 * 18).toISOString(),
-        escrowTxHash: "9dbff75866344153ea54d087a881cdf93000727a18fab2b509e96e79770fd62c"
-      },
-      {
-        id: "quest-104",
-        contractQuestId: "104",
-        title: "Zero-Knowledge Secret Key Derivation Verification",
-        description: "Demonstrate client-side key derivation conformance with Midnight BIP39 seed standards for unshielded public keys. Submit the cryptographic derivation identifier.",
-        category: "ZK Cryptography",
-        rewardUsdm: 180,
-        deadline: new Date(Date.now() + 86400000 * 1).toISOString(),
-        proofType: "AutomatedZkSecret",
-        secretCommitment: computeSecretHash(answer3),
-        employerWallet: "mn_addr_preview1cryptolab4m3n2b1v9c8x7z6a5s4d3f2g1h0j9k8l7",
-        questerWallet: null,
-        status: "Open",
-        difficulty: "Medium",
-        skillTags: ["BIP39", "Key Derivation", "Rust", "TypeScript"],
-        createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
-        escrowTxHash: "2c4e6a8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c2e4b6d8f0a2c4e6a8b0d2f4a"
-      }
-    ],
+    quests: [],
     submissions: [],
-    reputation: {
-      "mn_addr_preview1samplequester": {
-        completedCount: 14,
-        successfulCount: 14,
-        totalEarnedUsdm: 1850,
-        reputationScore: 98,
-        tier: "Elite Cryptographer"
-      }
-    },
+    reputation: {},
     activityLog: []
   };
 }
