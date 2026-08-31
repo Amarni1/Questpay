@@ -73,11 +73,9 @@ function openWalletModal() {
 
     const fullAddrEl = document.getElementById('connected-modal-full-addr');
     const usdmEl = document.getElementById('modal-usdm-val');
-    const dustEl = document.getElementById('modal-dust-val');
 
     if (fullAddrEl) fullAddrEl.innerText = connectedWallet.address;
     if (usdmEl) usdmEl.innerText = `${connectedWallet.usdm !== null ? connectedWallet.usdm : '0.00'} USDM`;
-    if (dustEl) dustEl.innerText = `${connectedWallet.dust !== null ? connectedWallet.dust : '0.00'} DUST`;
   } else {
     if (title) title.innerText = 'Connect Wallet';
     if (selView) selView.style.display = 'block';
@@ -268,7 +266,6 @@ function copyConnectedAddress() {
 async function refreshWalletBalances() {
   if (!connectedWallet.connected || !connectedWallet.address) {
     connectedWallet.usdm = null;
-    connectedWallet.dust = null;
     updateUIHeaderWidgets();
     return;
   }
@@ -276,12 +273,8 @@ async function refreshWalletBalances() {
   // If connected via direct Lace Midnight Extension
   if (connectedWallet.api && connectedWallet.type === 'midnight_extension') {
     try {
-      const [usdm, dust] = await Promise.all([
-        getMidnightUsdmBalance(connectedWallet.api),
-        getMidnightDustBalance(connectedWallet.api)
-      ]);
+      const usdm = await getMidnightUsdmBalance(connectedWallet.api);
       connectedWallet.usdm = usdm;
-      connectedWallet.dust = dust;
     } catch (err) {
       console.warn('[Balances] Direct API error:', err);
     }
@@ -310,19 +303,14 @@ function stopBalancePolling() {
 // Cleanly Updates Separated USDM Balance Card & Wallet Card in Header
 function updateUIHeaderWidgets() {
   const usdmEl = document.getElementById('header-usdm-val');
-  const dustEl = document.getElementById('header-dust-val');
   const walletCard = document.getElementById('header-wallet-card');
 
   // 1. Update Separate Available Balance Card
   if (connectedWallet.connected && connectedWallet.address) {
     const usdmDisplay = connectedWallet.usdm !== null ? connectedWallet.usdm : '0.00';
-    const dustDisplay = connectedWallet.dust !== null ? connectedWallet.dust : '0.00';
-
     if (usdmEl) usdmEl.innerText = `${usdmDisplay} USDM`;
-    if (dustEl) dustEl.innerText = `${dustDisplay} DUST`;
   } else {
     if (usdmEl) usdmEl.innerText = '-- USDM';
-    if (dustEl) dustEl.innerText = '-- DUST';
   }
 
   // 2. Update Separate Wallet Connect Card
