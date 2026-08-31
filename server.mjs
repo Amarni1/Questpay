@@ -13,8 +13,13 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Serve uploaded screenshots
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+app.use('/uploads', express.static(UPLOADS_DIR));
 
 // Network & Token constants for Midnight Preview
 const NETWORK_ID = process.env.MIDNIGHT_NETWORK_ID || 'preview';
@@ -35,7 +40,8 @@ function getInitialSeedData() {
     quests: [],
     submissions: [],
     reputation: {},
-    activityLog: []
+    activityLog: [],
+    walletEscrowLedger: {}
   };
 }
 
@@ -43,7 +49,10 @@ function getInitialSeedData() {
 function loadDatabase() {
   try {
     if (fs.existsSync(DB_FILE)) {
-      return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+      const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+      // Migrate: ensure walletEscrowLedger exists
+      if (!data.walletEscrowLedger) data.walletEscrowLedger = {};
+      return data;
     }
   } catch (err) {
     console.warn('[Database] Read error, resetting to seed:', err.message);
@@ -59,6 +68,14 @@ function saveDatabase(data) {
   } catch (err) {
     console.error('[Database] Save error:', err.message);
   }
+}
+
+// Helper: get or init wallet escrow ledger entry
+function getWalletLedger(db, address) {
+  if (!db.walletEscrowLedger[address]) {
+    db.walletEscrowLedger[address] = { totalLocked: 0, totalEarned: 0, totalRefunded: 0 };
+  }
+  return db.walletEscrowLedger[address];
 }
 
 // ---------------------------------------------------------------------------
@@ -164,9 +181,9 @@ app.get('/api/quests/:id', (req, res) => {
   });
 });
 
-// 5. Create & Escrow New Quest (Employer)
+// 5. Create & Escrow New Quest (Employer) — with Balance Validation
 app.post('/api/quests', (req, res) => {
-  const { title, description, category, rewardUsdm, proofType, secretAnswer, employerWallet, deadlineDays, skillTags } = req.body;
+  const { title, description, category, rewardUsdm, proofType, secretAnswer, employerWallet, deadlineDays, skillTags, employerUsdmBalance, questType, submissionRequirements } = req.body;
 
   if (!title || !description || !rewardUsdm || !employerWallet) {
     return res.status(400).json({ success: false, error: 'Missing required quest fields' });
@@ -177,6 +194,27 @@ app.post('/api/quests', (req, res) => {
     return res.status(400).json({ success: false, error: 'Reward amount must be positive USDM' });
   }
 
+  // ----- USDM Balance Validation -----
+  const db = loadDatabase();
+  const ledger = getWalletLedger(db, employerWallet);
+
+  if (typeof employerUsdmBalance === 'number' || typeof employerUsdmBalance === 'string') {
+    const walletBalance = parseFloat(employerUsdmBalance);
+    if (!isNaN(walletBalance)) {
+      const availableBalance = walletBalance - ledger.totalLocked;
+      if (availableBalance < rewardNum) {
+        return res.status(402).json({
+          success: false,
+          error: `Insufficient USDM balance. You have ${availableBalance.toFixed(2)} USDM available (${walletBalance.toFixed(2)} total - ${ledger.totalLocked.toFixed(2)} locked) but this quest requires ${rewardNum} USDM.`,
+          code: 'INSUFFICIENT_BALANCE',
+          available: availableBalance,
+          required: rewardNum,
+          totalLocked: ledger.totalLocked
+        });
+      }
+    }
+  }
+
   let secretCommitment = null;
   if (proofType === 'AutomatedZkSecret') {
     if (!secretAnswer || !secretAnswer.trim()) {
@@ -185,7 +223,6 @@ app.post('/api/quests', (req, res) => {
     secretCommitment = computeSecretHash(secretAnswer);
   }
 
-  const db = loadDatabase();
   const questIndex = db.quests.length + 101;
   const questId = `quest-${questIndex}`;
   const days = parseInt(deadlineDays) || 3;
@@ -193,6 +230,9 @@ app.post('/api/quests', (req, res) => {
 
   // Simulated live Compact contract escrow lock tx hash
   const escrowTxHash = crypto.randomBytes(32).toString('hex');
+
+  // Determine quest type based on proofType if not provided
+  const resolvedQuestType = questType || (proofType === 'AutomatedZkSecret' ? 'zk_secret' : 'text_submission');
 
   const newQuest = {
     id: questId,
@@ -203,6 +243,8 @@ app.post('/api/quests', (req, res) => {
     rewardUsdm: rewardNum,
     deadline,
     proofType: proofType || 'AutomatedZkSecret',
+    questType: resolvedQuestType,
+    submissionRequirements: submissionRequirements || '',
     secretCommitment,
     employerWallet: employerWallet.trim(),
     questerWallet: null,
@@ -214,6 +256,10 @@ app.post('/api/quests', (req, res) => {
   };
 
   db.quests.unshift(newQuest);
+
+  // Update wallet escrow ledger
+  ledger.totalLocked += rewardNum;
+
   db.activityLog.unshift({
     type: 'QUEST_CREATED',
     questId,
@@ -261,7 +307,9 @@ app.post('/api/quests/:id/accept', (req, res) => {
     type: 'QUEST_ACCEPTED',
     questId: quest.id,
     title: quest.title,
+    rewardUsdm: quest.rewardUsdm,
     quester: questerWallet,
+    employer: quest.employerWallet,
     timestamp: new Date().toISOString()
   });
 
@@ -274,12 +322,12 @@ app.post('/api/quests/:id/accept', (req, res) => {
   });
 });
 
-// 7. Submit Solution & Zero-Knowledge Verification
+// 7. Submit Solution & Zero-Knowledge Verification — with rich submission fields
 app.post('/api/quests/:id/submit-proof', (req, res) => {
-  const { questerWallet, solutionInput, proofEvidence } = req.body;
+  const { questerWallet, solutionInput, proofEvidence, submissionLinks, submissionScreenshots, submissionNotes } = req.body;
 
-  if (!questerWallet || (!solutionInput && !proofEvidence)) {
-    return res.status(400).json({ success: false, error: 'Submission requires solution input or proof evidence' });
+  if (!questerWallet || (!solutionInput && !proofEvidence && !submissionLinks?.length && !submissionScreenshots?.length && !submissionNotes)) {
+    return res.status(400).json({ success: false, error: 'Submission requires solution input, links, screenshots, or proof evidence' });
   }
 
   const db = loadDatabase();
@@ -315,6 +363,9 @@ app.post('/api/quests/:id/submit-proof', (req, res) => {
       questId: quest.id,
       questerWallet: questerWallet.trim(),
       solutionHash: submittedHash,
+      submissionLinks: submissionLinks || [],
+      submissionScreenshots: submissionScreenshots || [],
+      submissionNotes: submissionNotes || '',
       status: 'Paid',
       verifiedAt: new Date().toISOString(),
       payoutTxHash,
@@ -344,12 +395,19 @@ app.post('/api/quests/:id/submit-proof', (req, res) => {
 
     db.reputation[questerWallet] = userRep;
 
+    // Update wallet escrow ledgers
+    const employerLedger = getWalletLedger(db, quest.employerWallet);
+    employerLedger.totalLocked = Math.max(0, employerLedger.totalLocked - quest.rewardUsdm);
+    const questerLedger = getWalletLedger(db, questerWallet);
+    questerLedger.totalEarned += quest.rewardUsdm;
+
     db.activityLog.unshift({
       type: 'ESCROW_PAID',
       questId: quest.id,
       title: quest.title,
       rewardUsdm: quest.rewardUsdm,
       quester: questerWallet,
+      employer: quest.employerWallet,
       txHash: payoutTxHash,
       timestamp: new Date().toISOString()
     });
@@ -368,7 +426,7 @@ app.post('/api/quests/:id/submit-proof', (req, res) => {
     });
   }
 
-  // 2. Employer Attestation / Review Mode
+  // 2. Employer Attestation / Review Mode — with rich submission data
   quest.status = 'ProofSubmitted';
   quest.questerWallet = questerWallet.trim();
 
@@ -376,7 +434,10 @@ app.post('/api/quests/:id/submit-proof', (req, res) => {
     id: submissionId,
     questId: quest.id,
     questerWallet: questerWallet.trim(),
-    proofEvidence: proofEvidence || solutionInput,
+    proofEvidence: proofEvidence || solutionInput || '',
+    submissionLinks: submissionLinks || [],
+    submissionScreenshots: submissionScreenshots || [],
+    submissionNotes: submissionNotes || '',
     status: 'PendingReview',
     submittedAt: new Date().toISOString(),
     rewardUsdm: quest.rewardUsdm
@@ -433,7 +494,26 @@ app.post('/api/quests/:id/employer-approve', (req, res) => {
     userRep.totalEarnedUsdm += quest.rewardUsdm;
     userRep.reputationScore = Math.min(100, userRep.reputationScore + 5);
     db.reputation[quest.questerWallet] = userRep;
+
+    // Update wallet escrow ledgers
+    const questerLedger = getWalletLedger(db, quest.questerWallet);
+    questerLedger.totalEarned += quest.rewardUsdm;
   }
+
+  // Employer escrow released
+  const employerLedger = getWalletLedger(db, quest.employerWallet);
+  employerLedger.totalLocked = Math.max(0, employerLedger.totalLocked - quest.rewardUsdm);
+
+  db.activityLog.unshift({
+    type: 'ESCROW_PAID',
+    questId: quest.id,
+    title: quest.title,
+    rewardUsdm: quest.rewardUsdm,
+    quester: quest.questerWallet,
+    employer: quest.employerWallet,
+    txHash: payoutTxHash,
+    timestamp: new Date().toISOString()
+  });
 
   saveDatabase(db);
 
@@ -445,7 +525,192 @@ app.post('/api/quests/:id/employer-approve', (req, res) => {
   });
 });
 
-// 9. Reputation & Profile Endpoint
+// 9. DELETE Quest — Employer Only, Open Status Only
+app.delete('/api/quests/:id', (req, res) => {
+  const { employerWallet } = req.body;
+  if (!employerWallet) {
+    return res.status(400).json({ success: false, error: 'Employer wallet address required' });
+  }
+
+  const db = loadDatabase();
+  const questIndex = db.quests.findIndex(q => q.id === req.params.id);
+  if (questIndex === -1) {
+    return res.status(404).json({ success: false, error: 'Quest not found' });
+  }
+
+  const quest = db.quests[questIndex];
+
+  if (quest.employerWallet.toLowerCase() !== employerWallet.toLowerCase()) {
+    return res.status(403).json({ success: false, error: 'Only the employer who created this quest can delete it' });
+  }
+
+  if (quest.status !== 'Open') {
+    return res.status(400).json({ success: false, error: `Cannot delete quest with status "${quest.status}". Only Open quests can be deleted.` });
+  }
+
+  // Remove quest from array
+  db.quests.splice(questIndex, 1);
+
+  // Update wallet escrow ledger — refund
+  const ledger = getWalletLedger(db, employerWallet);
+  ledger.totalLocked = Math.max(0, ledger.totalLocked - quest.rewardUsdm);
+  ledger.totalRefunded = (ledger.totalRefunded || 0) + quest.rewardUsdm;
+
+  // Log cancellation
+  const cancelTxHash = crypto.randomBytes(32).toString('hex');
+  db.activityLog.unshift({
+    type: 'QUEST_CANCELLED',
+    questId: quest.id,
+    title: quest.title,
+    rewardUsdm: quest.rewardUsdm,
+    employer: employerWallet,
+    txHash: cancelTxHash,
+    timestamp: new Date().toISOString()
+  });
+
+  saveDatabase(db);
+
+  res.json({
+    success: true,
+    message: `Quest cancelled and ${quest.rewardUsdm} USDM refunded to your wallet.`,
+    refundedUsdm: quest.rewardUsdm,
+    cancelTxHash
+  });
+});
+
+// 10. Transaction History — Per Wallet Address (persistent across browsers)
+app.get('/api/transactions/:address', (req, res) => {
+  const db = loadDatabase();
+  const address = req.params.address;
+  const transactions = [];
+
+  // Build transactions from activity log
+  for (const log of db.activityLog) {
+    const isEmployer = log.employer && log.employer.toLowerCase() === address.toLowerCase();
+    const isQuester = log.quester && log.quester.toLowerCase() === address.toLowerCase();
+
+    if (!isEmployer && !isQuester) continue;
+
+    if (log.type === 'QUEST_CREATED' && isEmployer) {
+      transactions.push({
+        type: 'ESCROW_LOCKED',
+        questId: log.questId,
+        questTitle: log.title,
+        amount: log.rewardUsdm,
+        direction: '-',
+        txHash: log.txHash,
+        timestamp: log.timestamp,
+        counterparty: null,
+        status: 'Confirmed'
+      });
+    }
+
+    if (log.type === 'QUEST_CANCELLED' && isEmployer) {
+      transactions.push({
+        type: 'ESCROW_REFUNDED',
+        questId: log.questId,
+        questTitle: log.title,
+        amount: log.rewardUsdm,
+        direction: '+',
+        txHash: log.txHash,
+        timestamp: log.timestamp,
+        counterparty: null,
+        status: 'Refunded'
+      });
+    }
+
+    if (log.type === 'ESCROW_PAID' && isQuester) {
+      transactions.push({
+        type: 'BOUNTY_WON',
+        questId: log.questId,
+        questTitle: log.title,
+        amount: log.rewardUsdm,
+        direction: '+',
+        txHash: log.txHash,
+        timestamp: log.timestamp,
+        counterparty: log.employer || null,
+        status: 'Paid'
+      });
+    }
+
+    if (log.type === 'ESCROW_PAID' && isEmployer && !isQuester) {
+      transactions.push({
+        type: 'ESCROW_RELEASED',
+        questId: log.questId,
+        questTitle: log.title,
+        amount: log.rewardUsdm,
+        direction: '-',
+        txHash: log.txHash,
+        timestamp: log.timestamp,
+        counterparty: log.quester || null,
+        status: 'Paid'
+      });
+    }
+
+    if (log.type === 'QUEST_ACCEPTED' && isQuester) {
+      transactions.push({
+        type: 'QUEST_ACCEPTED',
+        questId: log.questId,
+        questTitle: log.title,
+        amount: 0,
+        direction: null,
+        txHash: null,
+        timestamp: log.timestamp,
+        counterparty: log.employer || null,
+        status: 'Active'
+      });
+    }
+  }
+
+  // Sort by timestamp descending
+  transactions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+  // Summary stats
+  const ledger = db.walletEscrowLedger[address] || { totalLocked: 0, totalEarned: 0, totalRefunded: 0 };
+  const summary = {
+    totalLocked: ledger.totalLocked,
+    totalEarned: ledger.totalEarned,
+    totalRefunded: ledger.totalRefunded || 0,
+    netBalance: ledger.totalEarned - ledger.totalLocked + (ledger.totalRefunded || 0)
+  };
+
+  res.json({
+    success: true,
+    address,
+    transactionCount: transactions.length,
+    transactions,
+    summary
+  });
+});
+
+// 11. Screenshot Upload (base64 in JSON body)
+app.post('/api/uploads', (req, res) => {
+  const { imageData, questId } = req.body;
+  if (!imageData) {
+    return res.status(400).json({ success: false, error: 'imageData (base64) required' });
+  }
+
+  // Strip data URL prefix if present
+  const base64 = imageData.replace(/^data:image\/\w+;base64,/, '');
+  const buffer = Buffer.from(base64, 'base64');
+
+  // 2MB limit
+  if (buffer.length > 2 * 1024 * 1024) {
+    return res.status(400).json({ success: false, error: 'Screenshot must be under 2MB' });
+  }
+
+  const filename = `${questId || 'upload'}-${Date.now()}.png`;
+  const filepath = path.join(UPLOADS_DIR, filename);
+  fs.writeFileSync(filepath, buffer);
+
+  res.json({
+    success: true,
+    filename,
+    path: `/uploads/${filename}`
+  });
+});
+
+// 12. Reputation & Profile Endpoint
 app.get('/api/reputation/:address', (req, res) => {
   const db = loadDatabase();
   const addr = req.params.address;
@@ -471,7 +736,7 @@ app.get('/api/reputation/:address', (req, res) => {
   });
 });
 
-// 10. Leaderboard Endpoint
+// 13. Leaderboard Endpoint
 app.get('/api/leaderboard', (req, res) => {
   const db = loadDatabase();
   const list = Object.entries(db.reputation).map(([address, stats]) => ({

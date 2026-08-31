@@ -1,4 +1,4 @@
-﻿// ============================================================================
+// ============================================================================
 // QuestPay - Privacy-Preserving Quest & Escrow Smart Contract
 // Language: Midnight Compact 0.17+ / Midnight Preview Network
 // ============================================================================
@@ -128,6 +128,29 @@ export circuit submit_and_verify_zk_proof(
 
     total_escrow_locked_usdm = total_escrow_locked_usdm - q.reward_usdm;
     completed_quests_count = completed_quests_count + 1;
+}
+
+// 5. Cancel Quest — Employer Only, Open Status Only
+// Refunds escrowed USDM back to the employer's wallet
+export circuit cancel_quest(quest_id: Uint<64>): [] {
+    assert(quests.member(quest_id), "Quest does not exist");
+    const q = quests.lookup(quest_id);
+    assert(own_public_key() == q.employer, "Only the employer who created this quest can cancel it");
+    assert(q.status == QuestStatus.Open, "Can only cancel quests that are still Open and unaccepted");
+
+    // Mark as cancelled and refund escrow
+    quests.insert(quest_id, QuestRecord {
+        employer: q.employer,
+        quester: q.quester,
+        reward_usdm: q.reward_usdm,
+        proof_type: q.proof_type,
+        secret_commitment: q.secret_commitment,
+        status: QuestStatus.Cancelled,
+        deadline_timestamp: q.deadline_timestamp,
+        created_at: q.created_at
+    });
+
+    total_escrow_locked_usdm = total_escrow_locked_usdm - q.reward_usdm;
 }
 
 // 4. Employer Manual Attestation & Release

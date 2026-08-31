@@ -22,9 +22,10 @@
       <!-- Center Navigation Pills -->
       <nav class="nav-pills">
         <button class="nav-pill-btn active" id="nav-explore" onclick="switchView('explore')">Explore Quests</button>
-        <button class="nav-pill-btn" id="nav-submissions" onclick="switchView('submissions')">My Bounties</button>
+        <button class="nav-pill-btn" id="nav-mybounties" onclick="switchView('mybounties')">My Bounties</button>
         <button class="nav-pill-btn" id="nav-employer" onclick="switchView('employer')">Employer Hub</button>
         <button class="nav-pill-btn" id="nav-leaderboard" onclick="switchView('leaderboard')">Reputation</button>
+        <button class="nav-pill-btn" id="nav-history" onclick="switchView('history')">📜 History</button>
       </nav>
 
       <!-- Right Header Status & Wallet (Cleanly Separated) -->
@@ -91,12 +92,13 @@
   <!-- Main View Container -->
   <main class="container">
     <!-- Controls Bar -->
-    <div class="controls-bar">
+    <div class="controls-bar" id="controls-bar">
       <div class="category-filters">
         <button class="filter-chip active" onclick="filterCategory('all', this)">All Bounties</button>
         <button class="filter-chip" onclick="filterCategory('ZK Cryptography', this)">ZK Cryptography</button>
         <button class="filter-chip" onclick="filterCategory('Smart Contract Audit', this)">Smart Contract Audit</button>
         <button class="filter-chip" onclick="filterCategory('Research & Benchmarking', this)">Research & Telemetry</button>
+        <button class="filter-chip" onclick="filterCategory('Social & Community', this)">Social & Community</button>
       </div>
 
       <div class="action-buttons-group">
@@ -106,7 +108,7 @@
       </div>
     </div>
 
-    <!-- Active Quests Grid -->
+    <!-- Active Quests Grid & Dynamic Views -->
     <div class="quests-grid" id="quests-container">
       <!-- Injected via app.js -->
     </div>
@@ -131,22 +133,27 @@
           </div>
           <div id="drawer-proof-badge" class="proof-mode-badge zk">⚡ Automated ZK Proof</div>
         </div>
-        <p id="drawer-quest-desc" style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.5;"></p>
+        <p id="drawer-quest-desc" style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 0.75rem;"></p>
+        
+        <div id="drawer-requirements-box" style="display: none; background: rgba(56, 117, 246, 0.08); border: 1px solid rgba(56, 117, 246, 0.25); border-radius: 10px; padding: 0.75rem 1rem; font-size: 0.82rem; color: #93c5fd;">
+          <div style="font-weight: 700; text-transform: uppercase; font-size: 0.72rem; margin-bottom: 0.25rem;">Submission Requirements:</div>
+          <div id="drawer-requirements-text"></div>
+        </div>
       </div>
 
-      <!-- Private Solution / Proof Input -->
-      <div class="drawer-section">
-        <div class="drawer-section-label">Submit Private Solution</div>
-        <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.5rem;">
-          Your answer is verified in Zero-Knowledge against the Compact contract's on-chain commitment hash. It is never exposed in plaintext on-chain.
+      <!-- Secret Solution / Proof Input (Shown for ZK or text quests) -->
+      <div class="drawer-section" id="drawer-secret-section">
+        <div class="drawer-section-label">Submit Solution / Key</div>
+        <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.5rem;" id="drawer-secret-help">
+          Your answer is verified in Zero-Knowledge against the Compact contract's on-chain commitment hash.
         </p>
 
         <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-main); display: block; margin-bottom: 0.35rem;">
-          Secret Solution Answer / Proof:
+          Solution Text / Proof Key:
         </label>
-        <input type="text" class="input-styled" id="drawer-solution-input" placeholder="e.g. recursion, overflow_check_missing..." oninput="handleSolutionInput(this.value)">
+        <input type="text" class="input-styled" id="drawer-solution-input" placeholder="e.g. recursion, secret_key..." oninput="handleSolutionInput(this.value)">
 
-        <div style="margin-top: 0.75rem;">
+        <div style="margin-top: 0.75rem;" id="drawer-hash-box">
           <div class="drawer-section-label">Client-Side Cryptographic Hash Visualizer (SHA-256):</div>
           <div class="hash-preview-box" id="drawer-hash-preview">
             Type your solution above to compute real-time commitment...
@@ -154,8 +161,45 @@
         </div>
       </div>
 
+      <!-- Rich Links Input (For simple quests like Twitter, Github, etc.) -->
+      <div class="drawer-section" id="drawer-links-section">
+        <div class="drawer-section-label">Proof Links (URLs)</div>
+        <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.5rem;">
+          Provide URL links to your submission (e.g. Tweet link, Twitter profile, GitHub PR/commit, or evidence URL).
+        </p>
+        <div class="link-input-group">
+          <input type="url" class="input-styled" id="drawer-link-input-1" placeholder="https://x.com/your_handle/status/... or https://github.com/...">
+          <input type="url" class="input-styled" id="drawer-link-input-2" placeholder="Optional secondary link (e.g. profile link)">
+        </div>
+      </div>
+
+      <!-- Screenshot Upload Section -->
+      <div class="drawer-section" id="drawer-screenshot-section">
+        <div class="drawer-section-label">Screenshot / Image Evidence</div>
+        <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.5rem;">
+          Upload proof screenshots (e.g. following on Twitter, test run output, completed challenge). Max 2MB per image.
+        </p>
+        
+        <div class="upload-dropzone" id="drawer-upload-dropzone" onclick="document.getElementById('drawer-screenshot-file').click()">
+          <div class="upload-dropzone-icon">📸</div>
+          <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-main); margin-bottom: 0.25rem;">Click or Drag & Drop Screenshot</div>
+          <div style="font-size: 0.75rem; color: var(--text-dim);">PNG, JPG, WEBP up to 2MB</div>
+          <input type="file" id="drawer-screenshot-file" accept="image/*" style="display: none;" onchange="handleScreenshotUpload(event)">
+        </div>
+
+        <div class="upload-preview-container" id="drawer-screenshot-previews">
+          <!-- Image previews injected here -->
+        </div>
+      </div>
+
+      <!-- Additional Submitter Notes -->
+      <div class="drawer-section" id="drawer-notes-section">
+        <div class="drawer-section-label">Additional Submitter Notes</div>
+        <textarea class="input-styled" id="drawer-notes-input" rows="2" placeholder="Add any extra notes, timestamps, or instructions for the employer..."></textarea>
+      </div>
+
       <!-- Payout Action Button -->
-      <div style="margin-top: 2rem;">
+      <div style="margin-top: 1.5rem;">
         <button class="btn-primary-action" id="btn-submit-proof" onclick="submitActiveQuestProof()">
           <span>Verify & Release USDM Escrow</span>
         </button>
@@ -172,9 +216,27 @@
       </div>
 
       <form id="create-quest-form" onsubmit="handleCreateQuestSubmit(event)">
+        <!-- Available Balance Info Banner -->
+        <div class="balance-info-box" id="create-balance-info-box">
+          <div class="balance-info-left">
+            <span>💰</span>
+            <span>Your Available Balance:</span>
+          </div>
+          <div class="balance-info-val" id="create-modal-available-balance">0.00 USDM</div>
+        </div>
+
+        <!-- Balance Low Warning Banner -->
+        <div class="balance-warning" id="create-balance-warning">
+          <span class="balance-warning-icon">⚠️</span>
+          <div>
+            <strong>Insufficient USDM Balance!</strong>
+            <div id="create-balance-warning-text">You do not have enough unlocked USDM to fund this quest.</div>
+          </div>
+        </div>
+
         <div style="margin-bottom: 1rem;">
           <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 0.35rem;">Quest Title</label>
-          <input type="text" class="input-styled" id="create-title" placeholder="e.g. ZK Circuit Vulnerability Assessment" required>
+          <input type="text" class="input-styled" id="create-title" placeholder="e.g. Follow @QuestPay on X & Retweet or Audit ZK Verifier" required>
         </div>
 
         <div style="margin-bottom: 1rem;">
@@ -189,21 +251,38 @@
               <option value="ZK Cryptography">ZK Cryptography</option>
               <option value="Smart Contract Audit">Smart Contract Audit</option>
               <option value="Research & Benchmarking">Research & Benchmarking</option>
+              <option value="Social & Community">Social & Community</option>
               <option value="General Bounty">General Bounty</option>
             </select>
           </div>
           <div>
             <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 0.35rem;">Reward (USDM Escrow)</label>
-            <input type="number" step="1" min="10" class="input-styled" id="create-reward" placeholder="100" required>
+            <input type="number" step="1" min="1" class="input-styled" id="create-reward" placeholder="50" required oninput="checkCreateQuestBalance(this.value)">
           </div>
         </div>
 
-        <div style="margin-bottom: 1.25rem;">
-          <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 0.35rem;">Verification Mode</label>
-          <select class="input-styled" id="create-proof-type" onchange="toggleSecretAnswerField(this.value)">
-            <option value="AutomatedZkSecret">⚡ Automated ZK Secret Challenge (Instant Release)</option>
-            <option value="EmployerAttestation">👤 Employer Manual Attestation & Review</option>
-          </select>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+          <div>
+            <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 0.35rem;">Quest Type / Proof Requirement</label>
+            <select class="input-styled" id="create-quest-type" onchange="handleQuestTypeChange(this.value)">
+              <option value="zk_secret">⚡ ZK Secret Challenge (Instant Payout)</option>
+              <option value="link_submission">🔗 Link / URL Submission (e.g. Social, PR)</option>
+              <option value="screenshot_submission">📸 Screenshot / Image Proof</option>
+              <option value="text_submission">📝 Text / Code Review Submission</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 0.35rem;">Verification Mode</label>
+            <select class="input-styled" id="create-proof-type" onchange="toggleSecretAnswerField(this.value)">
+              <option value="AutomatedZkSecret">⚡ Automated ZK Secret Challenge (Instant Release)</option>
+              <option value="EmployerAttestation">👤 Employer Manual Attestation & Review</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 1rem;" id="submission-requirements-group">
+          <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 0.35rem;">Submission Guidance (Optional)</label>
+          <input type="text" class="input-styled" id="create-submission-reqs" placeholder="e.g. Provide link to tweet and screenshot of profile follow">
         </div>
 
         <div id="secret-answer-group" style="margin-bottom: 1.5rem;">
@@ -214,7 +293,7 @@
           <small style="color: var(--text-dim); font-size: 0.75rem;">Only the SHA-256 commitment hash is locked into the Compact contract. The plaintext answer remains confidential.</small>
         </div>
 
-        <button type="submit" class="btn-primary-action">
+        <button type="submit" class="btn-primary-action" id="btn-submit-create-quest">
           <span>Lock USDM Escrow & Publish Quest</span>
         </button>
       </form>
@@ -266,6 +345,21 @@
           <button class="btn-secondary" style="flex: 1;" onclick="copyConnectedAddress()">📋 Copy Address</button>
           <button class="btn-secondary" style="flex: 1; border-color: rgba(244,63,94,0.4); color: #fb7185;" onclick="disconnectWallet()">Disconnect</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm Delete Dialog Modal -->
+  <div class="confirm-dialog-backdrop" id="confirm-dialog-backdrop">
+    <div class="confirm-dialog">
+      <div class="confirm-dialog-icon">⚠️</div>
+      <div class="confirm-dialog-title" id="confirm-dialog-title">Cancel & Delete Quest?</div>
+      <div class="confirm-dialog-desc" id="confirm-dialog-desc">
+        Are you sure you want to delete this bounty? The escrowed USDM will be immediately unlocked and refunded to your wallet balance.
+      </div>
+      <div class="confirm-dialog-actions">
+        <button class="btn-confirm-cancel" onclick="closeConfirmDialog()">Keep Bounty</button>
+        <button class="btn-confirm-danger" id="btn-confirm-delete" onclick="executeConfirmDelete()">Yes, Delete & Refund</button>
       </div>
     </div>
   </div>

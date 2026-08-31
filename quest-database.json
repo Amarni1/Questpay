@@ -1,6 +1,136 @@
 {
-  "quests": [],
-  "submissions": [],
-  "reputation": {},
-  "activityLog": []
+  "quests": [
+    {
+      "id": "quest-102",
+      "contractQuestId": "102",
+      "title": "Follow @QuestPay on X and Retweet",
+      "description": "Follow our official handle and submit screenshot or link proof",
+      "category": "Social & Community",
+      "rewardUsdm": 50,
+      "deadline": "2026-09-03T17:31:47.033Z",
+      "proofType": "AutomatedZkSecret",
+      "questType": "link_submission",
+      "submissionRequirements": "Submit your tweet link or profile URL",
+      "secretCommitment": "17b669561c95d3ac83bd5f4cbf7dea0041b3fe8b2302efaa4e7fc1582c591c4e",
+      "employerWallet": "mn_addr_preview1testuser0001",
+      "questerWallet": "mn_addr_preview1quester0001",
+      "status": "Paid",
+      "difficulty": "Easy",
+      "skillTags": [
+        "Web3",
+        "Midnight",
+        "USDM"
+      ],
+      "createdAt": "2026-08-31T17:31:47.033Z",
+      "escrowTxHash": "b922854fb44ceae1bd740c77bae059b75ed630fab3e0d0eb83cd09b3abce199a"
+    },
+    {
+      "id": "quest-101",
+      "contractQuestId": "101",
+      "title": "x account",
+      "description": "Follow x account",
+      "category": "ZK Cryptography",
+      "rewardUsdm": 10,
+      "deadline": "2026-09-03T17:06:00.289Z",
+      "proofType": "EmployerAttestation",
+      "secretCommitment": null,
+      "employerWallet": "mn_addr_preview1p6u2ddq47usppm2f8qum4xg4wktzwd38z360lr6pq53jyfduyf0qwekwmu",
+      "questerWallet": null,
+      "status": "Open",
+      "difficulty": "Easy",
+      "skillTags": [
+        "Web3",
+        "Midnight",
+        "USDM"
+      ],
+      "createdAt": "2026-08-31T17:06:00.290Z",
+      "escrowTxHash": "9fd798405617727216e2530c563a4dba49de680dd296d19b7017152336daef72"
+    }
+  ],
+  "submissions": [
+    {
+      "id": "sub-1788197507049-d85bec0e",
+      "questId": "quest-102",
+      "questerWallet": "mn_addr_preview1quester0001",
+      "solutionHash": "17b669561c95d3ac83bd5f4cbf7dea0041b3fe8b2302efaa4e7fc1582c591c4e",
+      "submissionLinks": [
+        "https://x.com/user/status/123456"
+      ],
+      "submissionScreenshots": [],
+      "submissionNotes": "Followed and retweeted pinned post",
+      "status": "Paid",
+      "verifiedAt": "2026-08-31T17:31:47.049Z",
+      "payoutTxHash": "900e4f4dd7d86af45bae789c95f3772460cab3dafa1836c55f288fb618642c6a",
+      "rewardUsdm": 50
+    }
+  ],
+  "reputation": {
+    "mn_addr_preview1quester0001": {
+      "completedCount": 1,
+      "successfulCount": 1,
+      "totalEarnedUsdm": 50,
+      "reputationScore": 75,
+      "tier": "Novice Quester"
+    }
+  },
+  "activityLog": [
+    {
+      "type": "QUEST_CANCELLED",
+      "questId": "quest-103",
+      "title": "Temporary Quest to Cancel",
+      "rewardUsdm": 75,
+      "employer": "mn_addr_preview1testuser0001",
+      "txHash": "82aa614966a238451a2274a75331321b01a497b039730bdf9fa8a279fe7ae533",
+      "timestamp": "2026-08-31T17:31:47.069Z"
+    },
+    {
+      "type": "QUEST_CREATED",
+      "questId": "quest-103",
+      "title": "Temporary Quest to Cancel",
+      "rewardUsdm": 75,
+      "employer": "mn_addr_preview1testuser0001",
+      "txHash": "da2d94510e239b6be1c3f44892dff402f6813128b3089c146f300b9772e366b6",
+      "timestamp": "2026-08-31T17:31:47.063Z"
+    },
+    {
+      "type": "ESCROW_PAID",
+      "questId": "quest-102",
+      "title": "Follow @QuestPay on X and Retweet",
+      "rewardUsdm": 50,
+      "quester": "mn_addr_preview1quester0001",
+      "employer": "mn_addr_preview1testuser0001",
+      "txHash": "900e4f4dd7d86af45bae789c95f3772460cab3dafa1836c55f288fb618642c6a",
+      "timestamp": "2026-08-31T17:31:47.049Z"
+    },
+    {
+      "type": "QUEST_CREATED",
+      "questId": "quest-102",
+      "title": "Follow @QuestPay on X and Retweet",
+      "rewardUsdm": 50,
+      "employer": "mn_addr_preview1testuser0001",
+      "txHash": "b922854fb44ceae1bd740c77bae059b75ed630fab3e0d0eb83cd09b3abce199a",
+      "timestamp": "2026-08-31T17:31:47.033Z"
+    },
+    {
+      "type": "QUEST_CREATED",
+      "questId": "quest-101",
+      "title": "x account",
+      "rewardUsdm": 10,
+      "employer": "mn_addr_preview1p6u2ddq47usppm2f8qum4xg4wktzwd38z360lr6pq53jyfduyf0qwekwmu",
+      "txHash": "9fd798405617727216e2530c563a4dba49de680dd296d19b7017152336daef72",
+      "timestamp": "2026-08-31T17:06:00.290Z"
+    }
+  ],
+  "walletEscrowLedger": {
+    "mn_addr_preview1testuser0001": {
+      "totalLocked": 0,
+      "totalEarned": 0,
+      "totalRefunded": 75
+    },
+    "mn_addr_preview1quester0001": {
+      "totalLocked": 0,
+      "totalEarned": 50,
+      "totalRefunded": 0
+    }
+  }
 }
