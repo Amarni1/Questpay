@@ -5,7 +5,6 @@ import {
   USDM_DECIMALS,
   formatUsdm,
   usdmToRaw,
-  pollTransactionConfirmation,
   MIDNIGHT_EXPLORER_BASE,
   getExplorerTxUrl,
   logOriginalWalletError,
@@ -178,49 +177,10 @@ export const CreateBountyView: React.FC<CreateBountyViewProps> = ({ onNavigate }
       setTxHash(submittedHash);
       setModalPhase('submitted');
       setTxStatus('Pending');
-
-      // 2. Poll transaction confirmation on Midnight Preview
-      const pollResult = await pollTransactionConfirmation(wallet.api, submittedHash, 30);
-
-      if (pollResult.status === 'discarded') {
-        setTxStatus('Discarded');
-        setModalPhase('error');
-        setModalError('Transaction was discarded or rejected by Midnight Preview network. The bounty was not funded.');
-        return;
-      }
-
-      setTxStatus('Finalized');
-
-      // 3. Register finalized on-chain bounty with backend
-      const calculatedExpiresAt = new Date(Date.now() + 86400000 * resolvedDurationDays).toISOString();
-      const res = await fetch('/api/bounties', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          employerWallet: wallet.address,
-          title: title.trim(),
-          description: description.trim(),
-          category,
-          rewardUsdm: rewardNum,
-          rewardRaw: rewardRaw.toString(),
-          usdmTokenType: USDM_TOKEN_TYPE,
-          proofType,
-          durationDays: resolvedDurationDays,
-          deadline: calculatedExpiresAt,
-          fundingTxHash: submittedHash,
-          submissionRequirements: submissionRequirements.trim(),
-          secretAnswer: secretAnswer.trim()
-        })
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to register funded bounty in backend ledger.');
-      }
-
-      setModalPhase('finalized');
-      await refreshUsdmBalance();
-      await checkBalance();
+      // submitTransaction() returns no network hash. Keep this pending until a
+      // supported explorer or indexer supplies one; do not poll getTxHistory().
+      void refreshUsdmBalance();
+      void checkBalance();
     } catch (error) {
       logOriginalWalletError('Fund Bounty UI', error);
       setModalPhase('error');
@@ -623,7 +583,7 @@ export const CreateBountyView: React.FC<CreateBountyViewProps> = ({ onNavigate }
                         {txHash}
                       </div>
 
-                      {MIDNIGHT_EXPLORER_BASE && (
+                      {MIDNIGHT_EXPLORER_BASE && txHash !== 'submitted' && (
                         <div style={{ marginTop: '0.75rem', textAlign: 'right' }}>
                           <a
                             href={`${MIDNIGHT_EXPLORER_BASE}/${txHash.replace(/^0x/, '')}`}
@@ -661,7 +621,15 @@ export const CreateBountyView: React.FC<CreateBountyViewProps> = ({ onNavigate }
                   </button>
                 ) : (
                   <div style={{ textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    Verifying on Midnight Preview ledger…
+                    Submitted to the wallet relay. The funding record remains pending until a supported explorer or indexer returns the network transaction hash.
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ margin: '0.85rem auto 0', padding: '0.55rem 0.9rem' }}
+                      onClick={() => setIsModalOpen(false)}
+                    >
+                      Close
+                    </button>
                   </div>
                 )}
               </div>
