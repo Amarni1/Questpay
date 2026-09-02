@@ -16,6 +16,10 @@ export const QUESTPAY_ESCROW_ADDRESS =
 export const USDM_TOKEN_TYPE =
   String((import.meta as any).env?.VITE_USDM_TOKEN_TYPE || '003bacd9a361ba0d425e408776020e40271375e8b8de42d73eec046a44947d73').trim();
 
+// Temporary diagnostic transfers must always target this verified Preview USDM color.
+export const USDM_TOKEN_COLOR = '003bacd9a361ba0d425e408776020e40271375e8b8de42d73eec046a44947d73';
+export const USDM_TEST_TRANSFER_AMOUNT = 1_000_000n;
+
 export const USDM_DECIMALS =
   Number.isInteger(Number((import.meta as any).env?.VITE_USDM_DECIMALS)) && Number((import.meta as any).env?.VITE_USDM_DECIMALS) >= 0
     ? Number((import.meta as any).env?.VITE_USDM_DECIMALS)
@@ -24,7 +28,7 @@ export const USDM_DECIMALS =
 export const MIDNIGHT_EXPLORER_BASE =
   String((import.meta as any).env?.VITE_MIDNIGHT_EXPLORER_URL || 'https://explorer.preview.midnight.network/tx').trim();
 
-type MidnightWalletApi = ConnectedAPI;
+type MidnightWalletApi = ConnectedAPI & { apiVersion?: string };
 type MidnightWalletProvider = InitialAPI;
 type DevWalletProvider = {
   isDevWallet?: boolean;
@@ -198,6 +202,114 @@ export async function getRealUsdmBalance(
 }
 
 export const readMidnightUsdmBalance = getRealUsdmBalance;
+
+export type UsdmSelfTransferDiagnosticResult = {
+  txHash: string;
+  txStatus: string;
+  amount: bigint;
+  tokenColor: string;
+  recipient: string;
+  networkId: string;
+  status: 'Pending' | 'Confirmed' | 'Failed';
+};
+
+/**
+ * Temporary Preview-only USDM self-transfer diagnostic. This intentionally
+ * stays independent of QuestPay escrow and Compact contract interactions.
+ */
+export async function runUsdmSelfTransferDiagnostic(
+  connectedWallet: MidnightWalletApi
+): Promise<UsdmSelfTransferDiagnosticResult> {
+  try {
+    if (!connectedWallet) {
+      throw new Error('Connect your Midnight wallet first.');
+    }
+
+    const connectionStatus = await connectedWallet.getConnectionStatus();
+    const networkId = assertPreviewNetwork(connectionStatus);
+    const addressResult = await connectedWallet.getUnshieldedAddress();
+    const ownUnshieldedAddress = addressResult?.unshieldedAddress;
+    if (!ownUnshieldedAddress) {
+      throw new Error('Midnight wallet did not return an unshielded address.');
+    }
+
+    const balances = await connectedWallet.getUnshieldedBalances();
+    const rawUsdmBalance = balances?.[USDM_TOKEN_COLOR as TokenType];
+    if (typeof rawUsdmBalance !== 'bigint') {
+      throw new Error(`USDM token ${USDM_TOKEN_COLOR} was not found in the connected wallet.`);
+    }
+    if (rawUsdmBalance < USDM_TEST_TRANSFER_AMOUNT) {
+      throw new Error('At least 1 USDM is required for the transfer test.');
+    }
+
+    const historyBefore = await connectedWallet.getTxHistory(0, 20);
+    const previousHashes = new Set(
+      Array.isArray(historyBefore)
+        ? historyBefore.map((transaction) => transaction.txHash)
+        : []
+    );
+
+    console.log('[USDM TEST]', {
+      apiVersion: connectedWallet.apiVersion,
+      connectionStatus: await connectedWallet.getConnectionStatus(),
+      networkId: (await connectedWallet.getConnectionStatus() as ConnectionStatus & { networkId?: string }).networkId,
+      address: await connectedWallet.getUnshieldedAddress(),
+      balances: await connectedWallet.getUnshieldedBalances(),
+      tokenColor: USDM_TOKEN_COLOR,
+      amount: 1_000_000n,
+      recipient: await connectedWallet.getUnshieldedAddress(),
+      makeTransferType: typeof connectedWallet.makeTransfer,
+      submitTransactionType: typeof connectedWallet.submitTransaction
+    });
+
+    const result = await connectedWallet.makeTransfer([{
+      kind: 'unshielded',
+      type: USDM_TOKEN_COLOR,
+      value: 1_000_000n,
+      recipient: ownUnshieldedAddress
+    }]);
+    console.log('[USDM TEST RESULT]', result);
+
+    if (!result || typeof result.tx !== 'string' || result.tx.length === 0) {
+      throw new Error('Midnight wallet did not return a serialized transaction string for the USDM test.');
+    }
+
+    await connectedWallet.submitTransaction(result.tx);
+
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const history = await connectedWallet.getTxHistory(0, 20);
+      const submittedTransaction = Array.isArray(history)
+        ? history.find((transaction) => !previousHashes.has(transaction.txHash))
+        : undefined;
+
+      if (submittedTransaction) {
+        const txStatus = submittedTransaction.txStatus.status;
+        return {
+          txHash: submittedTransaction.txHash,
+          txStatus,
+          amount: USDM_TEST_TRANSFER_AMOUNT,
+          tokenColor: USDM_TOKEN_COLOR,
+          recipient: ownUnshieldedAddress,
+          networkId,
+          status: txStatus === 'discarded'
+            ? 'Failed'
+            : txStatus === 'confirmed' || txStatus === 'finalized'
+              ? 'Confirmed'
+              : 'Pending'
+        };
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+
+    throw new Error('The submitted USDM test transfer did not appear in Midnight wallet history.');
+  } catch (error) {
+    console.error('[USDM TEST ERROR]', error);
+    console.error('[USDM TEST ERROR STACK]', (error as { stack?: unknown } | undefined)?.stack);
+    console.error('[USDM TEST ERROR CAUSE]', (error as { cause?: unknown } | undefined)?.cause);
+    throw error;
+  }
+}
 
 /**
  * Correlate the most recent transaction hash from wallet getTxHistory API
