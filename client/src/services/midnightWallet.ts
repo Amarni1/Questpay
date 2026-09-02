@@ -1,4 +1,11 @@
 import { DiscoveredMidnightWallet, WalletTransactionEntry } from '../types/index.js';
+import type {
+  ConnectionStatus,
+  ConnectedAPI,
+  DesiredOutput,
+  InitialAPI,
+  TokenType
+} from '@midnightntwrk/dapp-connector-api';
 
 export const MIDNIGHT_NETWORK = 'preview';
 export const CONTRACT_ADDRESS = '471dfe55c866fdbc085c9011a51f0cd0e9c9bfca6bb985c35f7716b6e73e485c';
@@ -16,6 +23,100 @@ export const USDM_DECIMALS =
 
 export const MIDNIGHT_EXPLORER_BASE =
   String((import.meta as any).env?.VITE_MIDNIGHT_EXPLORER_URL || 'https://explorer.preview.midnight.network/tx').trim();
+
+type MidnightWalletApi = ConnectedAPI;
+type MidnightWalletProvider = InitialAPI;
+type DevWalletProvider = {
+  isDevWallet?: boolean;
+  customAddress?: string;
+};
+
+function supportsDappConnectorV4(apiVersion: string): boolean {
+  return /^4\.\d+\.\d+(?:[-+].+)?$/.test(apiVersion);
+}
+
+function isDevWalletProvider(provider: unknown): provider is DevWalletProvider {
+  return Boolean(provider && typeof provider === 'object' && (provider as DevWalletProvider).isDevWallet);
+}
+
+function assertPreviewNetwork(status: ConnectionStatus): string {
+  if (status.status !== 'connected' || status.networkId !== MIDNIGHT_NETWORK) {
+    const connectedNetwork = status.status === 'connected' ? status.networkId : 'disconnected';
+    throw new Error(`QuestPay funding requires a Midnight Preview wallet connection. Connected network: ${connectedNetwork}.`);
+  }
+
+  return status.networkId;
+}
+
+export async function requirePreviewNetwork(
+  api: Pick<MidnightWalletApi, 'getConnectionStatus'>
+): Promise<string> {
+  return assertPreviewNetwork(await api.getConnectionStatus());
+}
+
+type FundingDiagnosticsInput = {
+  apiVersion?: string;
+  amountRaw: bigint;
+  connectedWallet: MidnightWalletApi;
+  desiredOutput: DesiredOutput;
+};
+
+/** Temporary pre-transfer snapshot for wallet-connector diagnostics. */
+export async function logFundingDiagnostics({
+  apiVersion,
+  amountRaw,
+  connectedWallet,
+  desiredOutput
+}: FundingDiagnosticsInput): Promise<ConnectionStatus> {
+  console.groupCollapsed('[QuestPay] Funding diagnostics');
+  try {
+    console.log('1. connected wallet apiVersion:', apiVersion);
+
+    const connectionStatus = await connectedWallet.getConnectionStatus();
+    console.log('2. getConnectionStatus():', connectionStatus);
+    console.log('3. connected networkId:', connectionStatus.status === 'connected' ? connectionStatus.networkId : undefined);
+    console.log('4. getUnshieldedAddress():', await connectedWallet.getUnshieldedAddress());
+    console.log('5. getUnshieldedBalances():', await connectedWallet.getUnshieldedBalances());
+    console.log('6. configured USDM_TOKEN_TYPE:', USDM_TOKEN_TYPE);
+    console.log('7. configured QUESTPAY_ESCROW_ADDRESS:', QUESTPAY_ESCROW_ADDRESS);
+    console.log('8. requested raw USDM amount:', amountRaw);
+    console.log('9. typeof connectedWallet.makeTransfer:', typeof connectedWallet.makeTransfer);
+    console.log('10. DesiredOutput passed to makeTransfer:', desiredOutput);
+
+    return connectionStatus;
+  } finally {
+    console.groupEnd();
+  }
+}
+
+export function logOriginalWalletError(context: string, error: unknown): void {
+  console.error(`[QuestPay] ${context} original error:`, error);
+
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  let depth = 0;
+
+  while (current && typeof current === 'object' && !seen.has(current)) {
+    seen.add(current);
+
+    if (current instanceof Error) {
+      console.error(`[QuestPay] ${context} stack${depth ? ` (cause ${depth})` : ''}:`, current.stack);
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(current, 'cause')) {
+      break;
+    }
+
+    const cause = (current as { cause?: unknown }).cause;
+    if (cause === undefined) {
+      break;
+    }
+
+    depth += 1;
+    console.error(`[QuestPay] ${context} cause ${depth}:`, cause);
+    current = cause;
+  }
+}
 
 /**
  * Convert user input string to raw integer token amount
@@ -66,7 +167,9 @@ export function formatUsdm(raw: bigint): string {
 /**
  * Read real USDM unshielded balance directly from Midnight API
  */
-export async function getRealUsdmBalance(api: any): Promise<bigint> {
+export async function getRealUsdmBalance(
+  api: Pick<MidnightWalletApi, 'getUnshieldedBalances'>
+): Promise<bigint> {
   if (!api) {
     throw new Error('Connect your Midnight wallet first.');
   }
@@ -75,29 +178,17 @@ export async function getRealUsdmBalance(api: any): Promise<bigint> {
     throw new Error('USDM token configuration is missing.');
   }
 
-  if (typeof api.getUnshieldedBalances !== 'function') {
-    throw new Error('Midnight wallet returned no unshielded balance record.');
-  }
-
   const balances = await api.getUnshieldedBalances();
 
   if (!balances || typeof balances !== 'object') {
     throw new Error('Midnight wallet returned no unshielded balance record.');
   }
 
-  let rawBalance: bigint | undefined = undefined;
-
-  if (balances instanceof Map) {
-    if (!balances.has(USDM_TOKEN_TYPE)) {
-      throw new Error('USDM token was not found in the connected wallet.');
-    }
-    rawBalance = balances.get(USDM_TOKEN_TYPE);
-  } else {
-    if (!Object.prototype.hasOwnProperty.call(balances, USDM_TOKEN_TYPE)) {
-      throw new Error('USDM token was not found in the connected wallet.');
-    }
-    rawBalance = balances[USDM_TOKEN_TYPE];
+  if (!Object.prototype.hasOwnProperty.call(balances, USDM_TOKEN_TYPE)) {
+    throw new Error('USDM token was not found in the connected wallet.');
   }
+
+  const rawBalance = balances[USDM_TOKEN_TYPE as TokenType];
 
   if (typeof rawBalance !== 'bigint') {
     throw new Error('Midnight wallet returned an invalid USDM balance type.');
@@ -112,38 +203,28 @@ export const readMidnightUsdmBalance = getRealUsdmBalance;
  * Correlate the most recent transaction hash from wallet getTxHistory API
  */
 export async function findRecentTransaction(
-  api: any,
+  api: Pick<MidnightWalletApi, 'getTxHistory'>,
   beforeHashes: Set<string>,
   maxAttempts = 30
 ): Promise<WalletTransactionEntry | null> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    if (api && typeof api.getTxHistory === 'function') {
-      try {
-        const history = await api.getTxHistory(0, 100);
-        if (Array.isArray(history)) {
-          const match = history.find(
-            (entry: any) => {
-              const h = entry?.txHash || entry?.hash || entry?.id;
-              return h && !beforeHashes.has(h);
-            }
-          );
-          if (match) {
-            const hash = match.txHash || match.hash || match.id;
-            const status = match.status || (match.finalized ? 'finalized' : match.confirmed ? 'confirmed' : 'pending');
-            const executionStatus = match.executionStatus || match.result;
-            const timestamp = match.timestamp || match.createdAt || match.time;
-            return {
-              hash,
-              status,
-              executionStatus,
-              timestamp,
-              type: match.type || 'EscrowTransfer'
-            };
-          }
+    try {
+      const history = await api.getTxHistory(0, 100);
+      if (Array.isArray(history)) {
+        const match = history.find((entry) => !beforeHashes.has(entry.txHash));
+        if (match) {
+          return {
+            hash: match.txHash,
+            status: match.txStatus.status,
+            executionStatus: 'executionStatus' in match.txStatus
+              ? JSON.stringify(match.txStatus.executionStatus)
+              : undefined,
+            type: 'MidnightTransaction'
+          };
         }
-      } catch (err: any) {
-        console.warn('[QuestPay] Error reading tx history:', err.message);
       }
+    } catch (err: any) {
+      console.warn('[QuestPay] Error reading tx history:', err.message);
     }
     await new Promise(r => setTimeout(r, 2000));
   }
@@ -154,115 +235,76 @@ export async function findRecentTransaction(
  * Submit on-chain funding transaction to lock USDM in QuestPay escrow
  */
 export async function submitFundingTransaction(
-  api: any,
-  escrowRecipient: string,
+  connectedWallet: MidnightWalletApi,
   amountRaw: bigint,
-  tokenType: string
+  apiVersion?: string
 ): Promise<{ txHash: string }> {
   try {
-    if (!api) {
+    if (!connectedWallet) {
       throw new Error('Connect your Midnight wallet first.');
     }
 
-    const resolvedTokenType = tokenType || USDM_TOKEN_TYPE;
-    if (!resolvedTokenType) {
+    if (!USDM_TOKEN_TYPE) {
       throw new Error('USDM token configuration is missing.');
     }
 
-    const targetRecipient = escrowRecipient || QUESTPAY_ESCROW_ADDRESS;
-    if (!targetRecipient) {
+    if (!QUESTPAY_ESCROW_ADDRESS) {
       throw new Error('QuestPay escrow address is not configured.');
     }
 
+    if (amountRaw <= 0n) {
+      throw new Error('Funding amount must be greater than zero.');
+    }
+
+    const desiredOutput: DesiredOutput = {
+      kind: 'unshielded',
+      type: USDM_TOKEN_TYPE,
+      value: amountRaw,
+      recipient: QUESTPAY_ESCROW_ADDRESS
+    };
+
+    const connectionStatus = await logFundingDiagnostics({
+      apiVersion,
+      amountRaw,
+      connectedWallet,
+      desiredOutput
+    });
+    assertPreviewNetwork(connectionStatus);
+
     // 1. Verify real wallet balance
-    const rawBalance = await getRealUsdmBalance(api);
+    const rawBalance = await getRealUsdmBalance(connectedWallet);
     if (rawBalance < amountRaw) {
       throw new Error('Insufficient USDM balance.');
     }
 
     // 2. Snapshot existing transaction hashes before submission
     const beforeHashes = new Set<string>();
-    if (typeof api.getTxHistory === 'function') {
-      try {
-        const before = await api.getTxHistory(0, 100);
-        if (Array.isArray(before)) {
-          for (const entry of before) {
-            const h = entry?.txHash || entry?.hash || entry?.id;
-            if (h) beforeHashes.add(h);
-          }
+    try {
+      const before = await connectedWallet.getTxHistory(0, 100);
+      if (Array.isArray(before)) {
+        for (const entry of before) {
+          beforeHashes.add(entry.txHash);
         }
-      } catch {}
+      }
+    } catch {}
+
+    // The wallet constructs and signs the serialized transaction; QuestPay only states the intended USDM output.
+    const { tx } = await connectedWallet.makeTransfer([desiredOutput]);
+    if (typeof tx !== 'string' || tx.length === 0) {
+      throw new Error('Midnight wallet did not return a valid funding transaction.');
     }
 
-    // 3. Make transfer using Midnight DApp Connector v4 DesiredOutput specification
-    if (typeof api.makeTransfer === 'function') {
-      console.log('[QuestPay] makeTransfer desired outputs:', [
-        {
-          kind: 'unshielded',
-          type: resolvedTokenType,
-          value: amountRaw,
-          recipient: targetRecipient
-        }
-      ]);
+    await connectedWallet.submitTransaction(tx);
 
-      const result = await api.makeTransfer([
-        {
-          kind: 'unshielded',
-          type: resolvedTokenType,
-          value: amountRaw,
-          recipient: targetRecipient
-        }
-      ]);
-
-      console.log('[QuestPay] makeTransfer result:', result);
-      console.log('[QuestPay] makeTransfer result type:', typeof result);
-
-      if (!result || typeof result.tx !== 'string') {
-        throw new Error('Midnight wallet did not return a valid funding transaction.');
-      }
-
-      // 4. Submit serialized transaction
-      if (typeof api.submitTransaction === 'function') {
-        await api.submitTransaction(result.tx);
-      } else if (typeof api.submitTx === 'function') {
-        await api.submitTx(result.tx);
-      }
-
-      // 5. Correlate real transaction hash from wallet transaction history
-      const recentTx = await findRecentTransaction(api, beforeHashes, 15);
-      if (recentTx && recentTx.hash) {
-        return { txHash: recentTx.hash };
-      }
-
-      throw new Error('Transaction submitted. Waiting for wallet transaction history.');
+    // submitTransaction returns void in v4.0.1, so read the connector's transaction history for the network hash.
+    const recentTx = await findRecentTransaction(connectedWallet, beforeHashes, 15);
+    if (recentTx?.hash) {
+      return { txHash: recentTx.hash };
     }
 
-    // Fallback for Compact contract unsealed balancing path
-    if (typeof api.balanceUnsealedTransaction === 'function' && typeof api.submitTransaction === 'function') {
-      const unsealedTx = {
-        type: 'EscrowFunding',
-        recipient: targetRecipient,
-        tokenType: resolvedTokenType,
-        amount: amountRaw.toString()
-      };
-      const balancedTx = await api.balanceUnsealedTransaction(unsealedTx);
-      const txToSubmit = balancedTx?.tx || balancedTx;
-      await api.submitTransaction(txToSubmit);
-
-      const recentTx = await findRecentTransaction(api, beforeHashes, 15);
-      if (recentTx && recentTx.hash) {
-        return { txHash: recentTx.hash };
-      }
-
-      throw new Error('Transaction submitted. Waiting for wallet transaction history.');
-    }
-
-    throw new Error('Connected wallet does not support Midnight transaction submission APIs.');
-  } catch (error: any) {
-    console.error('===== QUESTPAY FUNDING ERROR =====');
-    console.error('ERROR:', error);
-    console.error('MESSAGE:', error instanceof Error ? error.message : String(error));
-    console.error('STACK:', error instanceof Error ? error.stack : 'NO STACK');
+    throw new Error('Transaction submitted. Waiting for wallet transaction history.');
+  } catch (error) {
+    logOriginalWalletError('funding', error);
     throw error;
   }
 }
@@ -271,7 +313,7 @@ export async function submitFundingTransaction(
  * Submit on-chain payout transaction to transfer USDM from escrow to quester
  */
 export async function submitPayoutTransaction(
-  api: any,
+  api: MidnightWalletApi,
   questerRecipient: string,
   amountRaw: bigint,
   tokenType: string
@@ -290,61 +332,43 @@ export async function submitPayoutTransaction(
       throw new Error('Quester recipient address is missing.');
     }
 
+    await requirePreviewNetwork(api);
+
+    if (amountRaw <= 0n) {
+      throw new Error('Payout amount must be greater than zero.');
+    }
+
     // Snapshot existing transaction hashes before submission
     const beforeHashes = new Set<string>();
-    if (typeof api.getTxHistory === 'function') {
-      try {
-        const before = await api.getTxHistory(0, 100);
-        if (Array.isArray(before)) {
-          for (const entry of before) {
-            const h = entry?.txHash || entry?.hash || entry?.id;
-            if (h) beforeHashes.add(h);
-          }
+    try {
+      const before = await api.getTxHistory(0, 100);
+      if (Array.isArray(before)) {
+        for (const entry of before) {
+          beforeHashes.add(entry.txHash);
         }
-      } catch {}
+      }
+    } catch {}
+
+    const desiredOutput: DesiredOutput = {
+      kind: 'unshielded',
+      type: resolvedTokenType as TokenType,
+      value: amountRaw,
+      recipient: questerRecipient
+    };
+
+    const { tx } = await api.makeTransfer([desiredOutput]);
+    if (typeof tx !== 'string' || tx.length === 0) {
+      throw new Error('Midnight wallet did not return a valid payout transaction.');
     }
 
-    if (typeof api.makeTransfer === 'function') {
-      console.log('[QuestPay] makeTransfer payout desired outputs:', [
-        {
-          kind: 'unshielded',
-          type: resolvedTokenType,
-          value: amountRaw,
-          recipient: questerRecipient
-        }
-      ]);
+    await api.submitTransaction(tx);
 
-      const result = await api.makeTransfer([
-        {
-          kind: 'unshielded',
-          type: resolvedTokenType,
-          value: amountRaw,
-          recipient: questerRecipient
-        }
-      ]);
-
-      console.log('[QuestPay] makeTransfer payout result:', result);
-      console.log('[QuestPay] makeTransfer payout result type:', typeof result);
-
-      if (!result || typeof result.tx !== 'string') {
-        throw new Error('Midnight wallet did not return a valid payout transaction.');
-      }
-
-      if (typeof api.submitTransaction === 'function') {
-        await api.submitTransaction(result.tx);
-      } else if (typeof api.submitTx === 'function') {
-        await api.submitTx(result.tx);
-      }
-
-      const recentTx = await findRecentTransaction(api, beforeHashes, 15);
-      if (recentTx && recentTx.hash) {
-        return { txHash: recentTx.hash };
-      }
-
-      throw new Error('Payout transaction submitted. Waiting for wallet transaction history.');
+    const recentTx = await findRecentTransaction(api, beforeHashes, 15);
+    if (recentTx?.hash) {
+      return { txHash: recentTx.hash };
     }
 
-    throw new Error('Connected wallet does not support Midnight payout transaction submission APIs.');
+    throw new Error('Payout transaction submitted. Waiting for wallet transaction history.');
   } catch (error) {
     console.error('[QuestPay PAYOUT ERROR]', error);
     console.error('[QuestPay PAYOUT STACK]', error instanceof Error ? error.stack : error);
@@ -356,7 +380,7 @@ export async function submitPayoutTransaction(
  * Poll transaction confirmation from wallet and indexer until finalized or discarded
  */
 export async function pollTransactionConfirmation(
-  api: any,
+  api: Pick<MidnightWalletApi, 'getTxHistory'>,
   txHash: string,
   maxAttempts = 30
 ): Promise<{ status: 'confirmed' | 'finalized' | 'discarded'; executionStatus?: string }> {
@@ -365,98 +389,66 @@ export async function pollTransactionConfirmation(
   }
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    if (api && typeof api.getTxHistory === 'function') {
-      try {
-        const history = await api.getTxHistory(0, 100);
-        if (Array.isArray(history)) {
-          const match = history.find(
-            (tx: any) => (tx.hash || tx.txHash || tx.id) === txHash
-          );
-          if (match) {
-            const rawStatus = (match.status || '').toLowerCase();
-            if (rawStatus === 'finalized' || rawStatus === 'confirmed') {
-              return { status: rawStatus as 'confirmed' | 'finalized', executionStatus: match.executionStatus || 'success' };
-            }
-            if (rawStatus === 'discarded' || rawStatus === 'failed') {
-              return { status: 'discarded', executionStatus: match.executionStatus || 'failed' };
-            }
-          }
+    try {
+      const history = await api.getTxHistory(0, 100);
+      const match = history.find((tx) => tx.txHash === txHash);
+      if (match) {
+        if (match.txStatus.status === 'pending') {
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
         }
-      } catch (err: any) {
-        console.warn('[QuestPay] getTxHistory poll error:', err.message);
+
+        return {
+          status: match.txStatus.status,
+          executionStatus: 'executionStatus' in match.txStatus
+            ? JSON.stringify(match.txStatus.executionStatus)
+            : undefined
+        }
       }
+    } catch (err: any) {
+      console.warn('[QuestPay] getTxHistory poll error:', err.message);
     }
 
     await new Promise(r => setTimeout(r, 2000));
   }
 
-  return { status: 'finalized', executionStatus: 'success' };
+  return { status: 'discarded', executionStatus: 'confirmation_timeout' };
 }
 
 /**
- * Discover compatible Midnight Preview & Cardano wallets from window.midnight and window.cardano
+ * Discover DApp Connector v4 wallets from the official window.midnight registry.
  */
 export function discoverMidnightWallets(): DiscoveredMidnightWallet[] {
   if (typeof window === 'undefined') {
     return [];
   }
 
-  const discovered: DiscoveredMidnightWallet[] = [];
-  const seenIds = new Set<string>();
-
-  // 1. Check window.midnight (Official Midnight Preview DApp Connector)
-  if ((window as any).midnight && typeof (window as any).midnight === 'object') {
-    const midnightObj = (window as any).midnight;
-    for (const [key, w] of Object.entries(midnightObj)) {
-      if (w && typeof w === 'object' && (typeof (w as any).connect === 'function' || typeof (w as any).enable === 'function')) {
-        const id = (w as any).rdns || (w as any).name || key;
-        if (!seenIds.has(id)) {
-          seenIds.add(id);
-          const isLace = id.toLowerCase().includes('lace') || ((w as any).name || '').toLowerCase().includes('lace');
-          discovered.push({
-            id,
-            rdns: (w as any).rdns || 'io.midnight.lace',
-            name: (w as any).name || (isLace ? 'Lace (Midnight Preview)' : 'Midnight Wallet'),
-            icon: (w as any).icon || 'https://assets.midnight.network/icons/midnight-logo.svg',
-            apiVersion: (w as any).apiVersion || '0.4.0',
-            provider: w
-          });
-        }
-      }
-    }
+  const midnight = (window as Window & { midnight?: Record<string, MidnightWalletProvider> }).midnight;
+  if (!midnight || typeof midnight !== 'object') {
+    return [];
   }
 
-  // 2. Check window.cardano (Cardano / Lace multi-asset connector)
-  if ((window as any).cardano && typeof (window as any).cardano === 'object') {
-    const cardanoObj = (window as any).cardano;
-    for (const [key, w] of Object.entries(cardanoObj)) {
-      if (w && typeof w === 'object' && (typeof (w as any).enable === 'function' || typeof (w as any).connect === 'function')) {
-        const id = `cardano.${key}`;
-        if (!seenIds.has(id)) {
-          seenIds.add(id);
-          const rawName = (w as any).name || key;
-          const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
-          discovered.push({
-            id,
-            rdns: (w as any).rdns || `io.cardano.${key}`,
-            name: `${formattedName} (Cardano / USDM)`,
-            icon: (w as any).icon || 'https://assets.midnight.network/icons/cardano-logo.svg',
-            apiVersion: (w as any).apiVersion || '0.1.0',
-            provider: w
-          });
-        }
-      }
+  return Object.entries(midnight).flatMap(([id, provider]) => {
+    if (!provider || typeof provider.connect !== 'function' || !supportsDappConnectorV4(provider.apiVersion)) {
+      return [];
     }
-  }
 
-  return discovered;
+    return [{
+      id,
+      rdns: provider.rdns,
+      name: provider.name,
+      icon: provider.icon,
+      apiVersion: provider.apiVersion,
+      provider
+    }];
+  });
 }
 
 /**
  * Connect to Midnight Preview Wallet
  */
-export async function connectMidnightWallet(provider: any): Promise<{
-  api: any;
+export async function connectMidnightWallet(provider: MidnightWalletProvider | DevWalletProvider): Promise<{
+  api: MidnightWalletApi;
   address: string;
   networkId: string;
 }> {
@@ -465,66 +457,33 @@ export async function connectMidnightWallet(provider: any): Promise<{
   }
 
   // Check if it's a dev wallet request
-  if (provider.isDevWallet || provider === 'dev') {
-    return createDevWalletConnection();
+  if (isDevWalletProvider(provider)) {
+    return createDevWalletConnection(provider.customAddress) as {
+      api: MidnightWalletApi;
+      address: string;
+      networkId: string;
+    };
   }
 
-  let connectedApi: any = null;
+  if (!supportsDappConnectorV4(provider.apiVersion)) {
+    throw new Error(`QuestPay requires a Midnight DApp Connector v4 wallet. Wallet reports ${provider.apiVersion || 'no API version'}.`);
+  }
 
-  // Try provider.connect(MIDNIGHT_NETWORK) or provider.enable()
-  if (typeof provider.connect === 'function') {
-    try {
-      connectedApi = await provider.connect(MIDNIGHT_NETWORK);
-    } catch (err: any) {
-      if (err.message?.includes('denied') || err.message?.includes('reject')) {
-        throw new Error('Access to wallet api denied. Please approve the connection in your wallet extension popup.');
-      }
-      throw err;
+  let connectedApi: MidnightWalletApi;
+  try {
+    connectedApi = await provider.connect(MIDNIGHT_NETWORK);
+  } catch (err: any) {
+    if (err.message?.includes('denied') || err.message?.includes('reject')) {
+      throw new Error('Access to wallet api denied. Please approve the connection in your wallet extension popup.');
     }
-  } else if (typeof provider.enable === 'function') {
-    try {
-      connectedApi = await provider.enable();
-    } catch (err: any) {
-      if (err.message?.includes('denied') || err.message?.includes('reject')) {
-        throw new Error('Access to wallet api denied. Please approve the connection in your wallet extension popup.');
-      }
-      throw err;
-    }
+    throw err;
   }
 
-  if (!connectedApi) {
-    throw new Error('Access to wallet api denied. Connection request was rejected or the window was closed.');
-  }
+  const networkId = await requirePreviewNetwork(connectedApi);
 
-  // Verify connection status & network
-  let networkId = MIDNIGHT_NETWORK;
-  if (typeof connectedApi.getConnectionStatus === 'function') {
-    try {
-      const status = await connectedApi.getConnectionStatus();
-      if (status && status.networkId) networkId = status.networkId;
-    } catch {}
-  }
-
-  // Fetch unshielded address
-  let address = await getMidnightAddress(connectedApi);
-
-  // Fallback address query for Cardano CIP-30 enabled APIs
-  if (!address && typeof connectedApi.getUsedAddresses === 'function') {
-    try {
-      const used = await connectedApi.getUsedAddresses();
-      if (used && used.length > 0) address = used[0];
-    } catch {}
-  }
-
-  if (!address && typeof connectedApi.getChangeAddress === 'function') {
-    try {
-      address = await connectedApi.getChangeAddress();
-    } catch {}
-  }
-
+  const address = await getMidnightAddress(connectedApi);
   if (!address) {
-    // Generate a consistent deterministic preview testnet address
-    address = 'mn_addr_preview1p6u2ddq47usppm2f8qum4xg4wktzwd38z360lr6pq53jyfduyf0qwekwmu';
+    throw new Error('Midnight wallet did not return an unshielded Preview address.');
   }
 
   return { api: connectedApi, address, networkId };
@@ -544,14 +503,16 @@ export function createDevWalletConnection(customAddress?: string): {
   const devApi = {
     isDevApi: true,
     getUnshieldedAddress: async () => ({ unshieldedAddress: address }),
-    getConnectionStatus: async () => ({ networkId: MIDNIGHT_NETWORK }),
+    getConnectionStatus: async () => ({ status: 'connected', networkId: MIDNIGHT_NETWORK }),
     getUnshieldedBalances: async () => {
-      const map = new Map();
-      map.set(USDM_TOKEN_TYPE || '0|0', 10000000000n); // 10,000 USDM
-      return map;
+      return { [USDM_TOKEN_TYPE || '0|0']: 10000000000n }; // 10,000 USDM
     },
-    signData: async (_addr: string, hexPayload: string) => {
-      return `sig_preview_${Date.now()}_${hexPayload.slice(0, 16)}`;
+    signData: async (data: string) => {
+      return {
+        data,
+        signature: `sig_preview_${Date.now()}_${data.slice(0, 16)}`,
+        verifyingKey: address
+      };
     },
     makeTransfer: async (_desiredOutputs: any[]) => {
       return { tx: `serialized_tx_${Date.now()}` };
@@ -560,14 +521,13 @@ export function createDevWalletConnection(customAddress?: string): {
       const newHash = `tx_${Date.now().toString(16)}`;
       devHistory.unshift({
         txHash: newHash,
-        status: 'finalized',
-        executionStatus: 'success',
-        timestamp: Date.now(),
-        type: 'Transfer'
+        txStatus: {
+          status: 'finalized',
+          executionStatus: { 0: 'Success' }
+        }
       });
     },
-    getTxHistory: async () => devHistory,
-    balanceUnsealedTransaction: async (tx: any) => ({ tx: `balanced_tx_${Date.now()}` })
+    getTxHistory: async () => devHistory
   };
 
   return {
@@ -580,42 +540,32 @@ export function createDevWalletConnection(customAddress?: string): {
 /**
  * Query unshielded address
  */
-export async function getMidnightAddress(api: any): Promise<string> {
-  if (!api) return '';
-  if (typeof api.getUnshieldedAddress === 'function') {
-    const res = await api.getUnshieldedAddress();
-    return res?.unshieldedAddress || (typeof res === 'string' ? res : '');
-  }
-  return '';
+export async function getMidnightAddress(
+  api: Pick<MidnightWalletApi, 'getUnshieldedAddress'>
+): Promise<string> {
+  const res = await api.getUnshieldedAddress();
+  return res?.unshieldedAddress || '';
 }
 
 
 /**
  * Fetch genuine transaction history directly from Midnight wallet connector
  */
-export async function fetchWalletTxHistory(api: any, page = 0, pageSize = 100): Promise<WalletTransactionEntry[]> {
-  if (!api || typeof api.getTxHistory !== 'function') {
-    return [];
-  }
-
+export async function fetchWalletTxHistory(
+  api: Pick<MidnightWalletApi, 'getTxHistory'>,
+  page = 0,
+  pageSize = 100
+): Promise<WalletTransactionEntry[]> {
   try {
     const rawEntries = await api.getTxHistory(page, pageSize);
-    if (!Array.isArray(rawEntries)) {
-      return [];
-    }
-
-    return rawEntries.map((tx: any) => {
-      const hash = tx.hash || tx.txHash || tx.id || String(tx);
-      const status = tx.status || (tx.finalized ? 'finalized' : tx.confirmed ? 'confirmed' : 'pending');
-      const executionStatus = tx.executionStatus || tx.result;
-      const timestamp = tx.timestamp || tx.createdAt || tx.time;
-
+    return rawEntries.map((tx) => {
       return {
-        hash,
-        status,
-        executionStatus,
-        timestamp,
-        type: tx.type || 'ContractInteraction'
+        hash: tx.txHash,
+        status: tx.txStatus.status,
+        executionStatus: 'executionStatus' in tx.txStatus
+          ? JSON.stringify(tx.txStatus.executionStatus)
+          : undefined,
+        type: 'MidnightTransaction'
       };
     });
   } catch (err: any) {
@@ -627,22 +577,16 @@ export async function fetchWalletTxHistory(api: any, page = 0, pageSize = 100): 
 /**
  * Sign challenge message using DApp Connector signData API
  */
-export async function signChallengeData(api: any, address: string, challengeMessage: string): Promise<string> {
-  if (api && typeof api.signData === 'function') {
-    try {
-      const hexMessage = Array.from(new TextEncoder().encode(challengeMessage))
-        .map(b => b.toString(16).padStart(2, '0')).join('');
-      const sigResult = await api.signData(address, hexMessage);
-      return typeof sigResult === 'object' ? JSON.stringify(sigResult) : sigResult;
-    } catch (err: any) {
-      console.warn('[QuestPay] signData call failed, falling back to signature hash:', err.message);
-    }
-  }
+export async function signChallengeData(
+  api: Pick<MidnightWalletApi, 'signData'>,
+  challengeMessage: string
+): Promise<string> {
+  const signature = await api.signData(challengeMessage, {
+    encoding: 'text',
+    keyType: 'unshielded'
+  });
 
-  // Fallback signature hash for custom dev/preview wallets
-  const msgUint8 = new TextEncoder().encode(`${address}:${challengeMessage}`);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+  return JSON.stringify(signature);
 }
 
 /**
