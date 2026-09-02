@@ -140,6 +140,7 @@ export interface WalletState {
   name: string;
   icon?: string;
   rdns?: string;
+  apiVersion?: string;
   address: string | null;
   api: any | null;
   networkId?: string;
@@ -171,4 +172,3 @@ export interface ReputationRecord {
   reputationScore: number;
   tier: string;
 }
-
