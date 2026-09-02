@@ -20,7 +20,7 @@ import {
   submitContractTransaction,
   USDM_TOKEN_TYPE,
   CONTRACT_ADDRESS,
-  QUESTPAY_ESCROW_ADDRESS
+  MIDNIGHT_NETWORK
 } from '../services/midnightWallet.js';
 
 interface WalletContextType {
@@ -40,7 +40,7 @@ interface WalletContextType {
   disconnect: () => void;
   refreshUsdmBalance: () => Promise<void>;
   getRealBalance: () => Promise<bigint>;
-  fundBountyEscrow: (amountRaw: bigint, escrowRecipient?: string) => Promise<{ txHash: string }>;
+  fundBountyEscrow: (amountRaw: bigint) => Promise<{ txHash: string }>;
   payoutBountyReward: (questerAddress: string, amountRaw: bigint) => Promise<{ txHash: string }>;
   refreshTransactionHistory: () => Promise<void>;
   signChallenge: (message: string) => Promise<string>;
@@ -246,6 +246,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         name: provider.name || 'Midnight Wallet',
         icon: provider.icon || '🌙',
         rdns: provider.rdns,
+        apiVersion: provider.apiVersion,
         address: connected.address,
         api: connected.api,
         networkId: connected.networkId,
@@ -368,6 +369,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         name: walletObj.name,
         icon: walletObj.icon,
         rdns: walletObj.rdns,
+        apiVersion: walletObj.apiVersion,
         address: connected.address,
         api: connected.api,
         networkId: connected.networkId,
@@ -442,7 +444,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Low-level sign challenge method
   const signChallenge = async (message: string): Promise<string> => {
     if (!wallet.address || !wallet.api) throw new Error('Wallet not connected');
-    return signChallengeData(wallet.api, wallet.address, message);
+    return signChallengeData(wallet.api, message);
   };
 
   // Request application authorization signature (invoked by user action in SignInModal)
@@ -472,7 +474,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
 
       // 2. Sign with Midnight signData()
-      const signature = await signChallengeData(wallet.api, wallet.address, chData.message);
+      const signature = await signChallengeData(wallet.api, chData.message);
 
       // 3. Verify on backend and establish session
       const verifyRes = await fetch('/api/auth/verify', {
@@ -592,7 +594,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       rdns: 'io.midnight.preview.dev',
       name: 'Preview Testnet Dev Wallet',
       icon: 'https://assets.midnight.network/icons/midnight-logo.svg',
-      apiVersion: '0.4.0',
+      apiVersion: '4.0.1',
       provider: { isDevWallet: true, customAddress }
     };
     await connectWallet(dev as any);
@@ -603,13 +605,16 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return getRealUsdmBalance(wallet.api);
   };
 
-  const fundBountyEscrow = async (amountRaw: bigint, escrowRecipient?: string): Promise<{ txHash: string }> => {
+  const fundBountyEscrow = async (amountRaw: bigint): Promise<{ txHash: string }> => {
     if (!wallet.api || !wallet.address) throw new Error('Connect your Midnight wallet first.');
+    if (wallet.networkId !== MIDNIGHT_NETWORK) {
+      throw new Error('QuestPay funding requires a Midnight Preview wallet connection.');
+    }
     const realBal = await getRealBalance();
     if (realBal < amountRaw) {
       throw new Error('Insufficient USDM balance.');
     }
-    const result = await submitFundingTransaction(wallet.api, escrowRecipient || QUESTPAY_ESCROW_ADDRESS, amountRaw, USDM_TOKEN_TYPE);
+    const result = await submitFundingTransaction(wallet.api, amountRaw, wallet.apiVersion);
     refreshUsdmBalance();
     refreshTransactionHistory();
     return result;
