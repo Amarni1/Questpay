@@ -220,139 +220,112 @@ export type UsdmSelfTransferDiagnosticResult = {
 export async function runUsdmSelfTransferDiagnostic(
   connectedWallet: MidnightWalletApi
 ): Promise<UsdmSelfTransferDiagnosticResult> {
-  try {
-    if (!connectedWallet) {
-      throw new Error('Connect your Midnight wallet first.');
-    }
-
-    const connectionStatus = await connectedWallet.getConnectionStatus();
-    const networkId = assertPreviewNetwork(connectionStatus);
-    const addressResult = await connectedWallet.getUnshieldedAddress();
-    const ownUnshieldedAddress = addressResult?.unshieldedAddress;
-    if (!ownUnshieldedAddress) {
-      throw new Error('Midnight wallet did not return an unshielded address.');
-    }
-
-    const balances = await connectedWallet.getUnshieldedBalances();
-    const rawUsdmBalance = balances?.[USDM_TOKEN_COLOR as TokenType];
-    if (typeof rawUsdmBalance !== 'bigint') {
-      throw new Error(`USDM token ${USDM_TOKEN_COLOR} was not found in the connected wallet.`);
-    }
-    if (rawUsdmBalance < USDM_TEST_TRANSFER_AMOUNT) {
-      throw new Error('At least 1 USDM is required for the transfer test.');
-    }
-
-    const historyBefore = await connectedWallet.getTxHistory(0, 20);
-    const previousHashes = new Set(
-      Array.isArray(historyBefore)
-        ? historyBefore.map((transaction) => transaction.txHash)
-        : []
-    );
-
-    console.log('=== QUESTPAY USDM DEBUG ===');
-    console.log('wallet:', connectedWallet);
-    console.log('wallet keys:', Object.keys(connectedWallet ?? {}));
-    console.log('apiVersion:', connectedWallet?.apiVersion);
-    console.log(
-      'connectionStatus:',
-      await connectedWallet?.getConnectionStatus?.()
-    );
-    console.log(
-      'unshieldedAddress:',
-      await connectedWallet?.getUnshieldedAddress?.()
-    );
-    console.log(
-      'unshieldedBalances:',
-      await connectedWallet?.getUnshieldedBalances?.()
-    );
-    console.log(
-      'makeTransfer:',
-      connectedWallet?.makeTransfer,
-      typeof connectedWallet?.makeTransfer
-    );
-    console.log(
-      'submitTransaction:',
-      connectedWallet?.submitTransaction,
-      typeof connectedWallet?.submitTransaction
-    );
-
-    const output: DesiredOutput = {
-      kind: 'unshielded',
-      type: USDM_TOKEN_COLOR,
-      value: 1_000_000n,
-      recipient: ownUnshieldedAddress
-    };
-    console.log('EXACT OUTPUT:', output);
-
-    try {
-      const result = await connectedWallet.makeTransfer([output]);
-
-      console.log('MAKE TRANSFER RESULT:', result);
-      console.log('RESULT TYPE:', typeof result);
-      console.log('RESULT TX:', result?.tx);
-      console.log('RESULT TX TYPE:', typeof result?.tx);
-
-      if (!result?.tx || typeof result.tx !== 'string') {
-        throw new Error('makeTransfer did not return a valid tx string');
-      }
-
-      console.log('SUBMITTING TX...');
-
-      const submitted = await connectedWallet.submitTransaction(result.tx);
-
-      console.log('SUBMIT RESULT:', submitted);
-    } catch (error) {
-      console.error('=== FULL USDM TRANSFER ERROR ===', error);
-      console.error('name:', (error as { name?: unknown } | undefined)?.name);
-      console.error('message:', (error as { message?: unknown } | undefined)?.message);
-      console.error('stack:', (error as { stack?: unknown } | undefined)?.stack);
-      console.error('cause:', (error as { cause?: unknown } | undefined)?.cause);
-
-      try {
-        console.error(
-          'JSON:',
-          JSON.stringify(error, Object.getOwnPropertyNames(error as object), 2)
-        );
-      } catch (jsonError) {
-        console.error('Could not stringify error:', jsonError);
-      }
-
-      throw error;
-    }
-
-    for (let attempt = 0; attempt < 30; attempt++) {
-      const history = await connectedWallet.getTxHistory(0, 20);
-      const submittedTransaction = Array.isArray(history)
-        ? history.find((transaction) => !previousHashes.has(transaction.txHash))
-        : undefined;
-
-      if (submittedTransaction) {
-        const txStatus = submittedTransaction.txStatus.status;
-        return {
-          txHash: submittedTransaction.txHash,
-          txStatus,
-          amount: USDM_TEST_TRANSFER_AMOUNT,
-          tokenColor: USDM_TOKEN_COLOR,
-          recipient: ownUnshieldedAddress,
-          networkId,
-          status: txStatus === 'discarded'
-            ? 'Failed'
-            : txStatus === 'confirmed' || txStatus === 'finalized'
-              ? 'Confirmed'
-              : 'Pending'
-        };
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    }
-
-    throw new Error('The submitted USDM test transfer did not appear in Midnight wallet history.');
-  } catch (error) {
-    console.error('[USDM TEST ERROR]', error);
-    console.error('[USDM TEST ERROR STACK]', (error as { stack?: unknown } | undefined)?.stack);
-    console.error('[USDM TEST ERROR CAUSE]', (error as { cause?: unknown } | undefined)?.cause);
-    throw error;
+  if (!connectedWallet) {
+    throw new Error('Connect your Midnight wallet first.');
   }
+
+  console.log('=== QUESTPAY USDM TRANSFER DEBUG ===');
+  console.log('apiVersion:', connectedWallet.apiVersion);
+  console.log('getConnectionStatus:', typeof connectedWallet.getConnectionStatus);
+  console.log('getUnshieldedAddress:', typeof connectedWallet.getUnshieldedAddress);
+  console.log('getUnshieldedBalances:', typeof connectedWallet.getUnshieldedBalances);
+  console.log('makeTransfer:', typeof connectedWallet.makeTransfer);
+  console.log('submitTransaction:', typeof connectedWallet.submitTransaction);
+
+  if (typeof connectedWallet.getConnectionStatus !== 'function') {
+    throw new Error('The connected wallet does not implement getConnectionStatus().');
+  }
+  if (typeof connectedWallet.getUnshieldedAddress !== 'function') {
+    throw new Error('The connected wallet does not implement getUnshieldedAddress().');
+  }
+  if (typeof connectedWallet.getUnshieldedBalances !== 'function') {
+    throw new Error('The connected wallet does not implement getUnshieldedBalances().');
+  }
+  if (typeof connectedWallet.makeTransfer !== 'function') {
+    throw new Error('The connected wallet does not implement makeTransfer().');
+  }
+  if (typeof connectedWallet.submitTransaction !== 'function') {
+    throw new Error('The connected wallet does not implement submitTransaction().');
+  }
+
+  const connectionStatus = await connectedWallet.getConnectionStatus();
+  console.log('connectionStatus:', connectionStatus);
+  if (connectionStatus.status !== 'connected' || connectionStatus.networkId !== MIDNIGHT_NETWORK) {
+    throw new Error(`QuestPay requires Midnight Preview. Current network: ${
+      connectionStatus.status === 'connected' ? connectionStatus.networkId : 'disconnected'
+    }`);
+  }
+
+  const addressResult = await connectedWallet.getUnshieldedAddress();
+  const ownUnshieldedAddress = addressResult?.unshieldedAddress;
+  if (!ownUnshieldedAddress) {
+    throw new Error('Midnight wallet did not return an unshielded address.');
+  }
+  console.log('unshieldedAddress:', ownUnshieldedAddress);
+
+  const balances = await connectedWallet.getUnshieldedBalances();
+  console.log('unshieldedBalances:', balances);
+  const rawUsdmBalance = balances?.[USDM_TOKEN_COLOR as TokenType];
+  if (typeof rawUsdmBalance !== 'bigint') {
+    throw new Error(`USDM token ${USDM_TOKEN_COLOR} was not found in the connected wallet.`);
+  }
+  console.log('USDM balance:', rawUsdmBalance.toString());
+  if (rawUsdmBalance < USDM_TEST_TRANSFER_AMOUNT) {
+    throw new Error('At least 1 USDM is required for the transfer test.');
+  }
+
+  // Do not call getTxHistory(): some wallet implementations do not support it.
+  const output: DesiredOutput = {
+    kind: 'unshielded',
+    type: USDM_TOKEN_COLOR as TokenType,
+    value: USDM_TEST_TRANSFER_AMOUNT,
+    recipient: ownUnshieldedAddress
+  };
+  console.log('TRANSFER OUTPUT:', output);
+
+  let result: { tx: string };
+  try {
+    console.log('Calling makeTransfer()...');
+    result = await connectedWallet.makeTransfer([output], { payFees: true });
+    console.log('makeTransfer result:', result);
+  } catch (error) {
+    console.error('makeTransfer FAILED:', error);
+    console.error('makeTransfer error name:', (error as any)?.name);
+    console.error('makeTransfer error message:', (error as any)?.message);
+    console.error('makeTransfer error stack:', (error as any)?.stack);
+    console.error('makeTransfer error cause:', (error as any)?.cause);
+    throw new Error(`Wallet makeTransfer failed: ${(error as any)?.message || 'Unknown wallet error'}`);
+  }
+
+  if (!result || typeof result.tx !== 'string') {
+    throw new Error('Midnight wallet returned an invalid transaction from makeTransfer().');
+  }
+  if (result.tx.length === 0) {
+    throw new Error('Midnight wallet returned an empty transaction.');
+  }
+  console.log('Transaction created successfully.');
+
+  try {
+    console.log('Submitting transaction...');
+    await connectedWallet.submitTransaction(result.tx);
+    console.log('Transaction submitted successfully.');
+  } catch (error) {
+    console.error('submitTransaction FAILED:', error);
+    console.error('submitTransaction error name:', (error as any)?.name);
+    console.error('submitTransaction error message:', (error as any)?.message);
+    console.error('submitTransaction error stack:', (error as any)?.stack);
+    throw new Error(`Wallet submitTransaction failed: ${(error as any)?.message || 'Unknown wallet error'}`);
+  }
+
+  return {
+    txHash: 'submitted',
+    txStatus: 'pending',
+    amount: USDM_TEST_TRANSFER_AMOUNT,
+    tokenColor: USDM_TOKEN_COLOR,
+    recipient: ownUnshieldedAddress,
+    networkId: MIDNIGHT_NETWORK,
+    status: 'Pending'
+  };
 }
 
 /**
@@ -395,74 +368,102 @@ export async function submitFundingTransaction(
   amountRaw: bigint,
   apiVersion?: string
 ): Promise<{ txHash: string }> {
-  try {
-    if (!connectedWallet) {
-      throw new Error('Connect your Midnight wallet first.');
-    }
-
-    if (!USDM_TOKEN_TYPE) {
-      throw new Error('USDM token configuration is missing.');
-    }
-
-    if (!QUESTPAY_ESCROW_ADDRESS) {
-      throw new Error('QuestPay escrow address is not configured.');
-    }
-
-    if (amountRaw <= 0n) {
-      throw new Error('Funding amount must be greater than zero.');
-    }
-
-    const desiredOutput: DesiredOutput = {
-      kind: 'unshielded',
-      type: USDM_TOKEN_TYPE,
-      value: amountRaw,
-      recipient: QUESTPAY_ESCROW_ADDRESS
-    };
-
-    const connectionStatus = await logFundingDiagnostics({
-      apiVersion,
-      amountRaw,
-      connectedWallet,
-      desiredOutput
-    });
-    assertPreviewNetwork(connectionStatus);
-
-    // 1. Verify real wallet balance
-    const rawBalance = await getRealUsdmBalance(connectedWallet);
-    if (rawBalance < amountRaw) {
-      throw new Error('Insufficient USDM balance.');
-    }
-
-    // 2. Snapshot existing transaction hashes before submission
-    const beforeHashes = new Set<string>();
-    try {
-      const before = await connectedWallet.getTxHistory(0, 100);
-      if (Array.isArray(before)) {
-        for (const entry of before) {
-          beforeHashes.add(entry.txHash);
-        }
-      }
-    } catch {}
-
-    // The wallet constructs and signs the serialized transaction; QuestPay only states the intended USDM output.
-    const { tx } = await connectedWallet.makeTransfer([desiredOutput]);
-    if (typeof tx !== 'string' || tx.length === 0) {
-      throw new Error('Midnight wallet did not return a valid funding transaction.');
-    }
-
-    await connectedWallet.submitTransaction(tx);
-
-    // submitTransaction returns void in v4.0.1, so read the connector's transaction history for the network hash.
-    const recentTx = await findRecentTransaction(connectedWallet, beforeHashes, 15);
-    if (recentTx?.hash) {
-      return { txHash: recentTx.hash };
-    }
-
-    throw new Error('Transaction submitted. Waiting for wallet transaction history.');
-  } catch (error) {
-    logOriginalWalletError('funding', error);
-    throw error;
+  if (!connectedWallet) {
+    throw new Error('Connect your Midnight wallet first.');
   }
+
+  if (!USDM_TOKEN_TYPE) {
+    throw new Error('USDM token configuration is missing.');
+  }
+  if (!QUESTPAY_ESCROW_ADDRESS) {
+    throw new Error('QuestPay escrow address is not configured.');
+  }
+  if (amountRaw <= 0n) {
+    throw new Error('Funding amount must be greater than zero.');
+  }
+
+  console.log('=== QUESTPAY FUNDING ===');
+  console.log('Wallet API version:', apiVersion || connectedWallet.apiVersion);
+
+  if (typeof connectedWallet.getConnectionStatus !== 'function') {
+    throw new Error('Connected Midnight wallet does not support getConnectionStatus().');
+  }
+  if (typeof connectedWallet.getUnshieldedBalances !== 'function') {
+    throw new Error('Connected Midnight wallet does not support getUnshieldedBalances().');
+  }
+  if (typeof connectedWallet.makeTransfer !== 'function') {
+    throw new Error('Connected Midnight wallet does not support makeTransfer().');
+  }
+  if (typeof connectedWallet.submitTransaction !== 'function') {
+    throw new Error('Connected Midnight wallet does not support submitTransaction().');
+  }
+
+  const connectionStatus = await connectedWallet.getConnectionStatus();
+  console.log('Connection status:', connectionStatus);
+  if (connectionStatus.status !== 'connected' || connectionStatus.networkId !== MIDNIGHT_NETWORK) {
+    throw new Error(`QuestPay funding requires Midnight Preview. Connected network: ${
+      connectionStatus.status === 'connected' ? connectionStatus.networkId : 'disconnected'
+    }`);
+  }
+
+  const balances = await connectedWallet.getUnshieldedBalances();
+  console.log('Wallet USDM balances:', balances);
+  const rawBalance = balances?.[USDM_TOKEN_TYPE as TokenType];
+  if (typeof rawBalance !== 'bigint') {
+    throw new Error(`USDM token ${USDM_TOKEN_TYPE} was not found in your Midnight wallet.`);
+  }
+  console.log('Available USDM:', rawBalance.toString());
+  console.log('Requested USDM:', amountRaw.toString());
+  if (rawBalance < amountRaw) {
+    throw new Error('Insufficient USDM balance.');
+  }
+
+  const desiredOutput: DesiredOutput = {
+    kind: 'unshielded',
+    type: USDM_TOKEN_TYPE as TokenType,
+    value: amountRaw,
+    recipient: QUESTPAY_ESCROW_ADDRESS
+  };
+  console.log('QuestPay funding output:', desiredOutput);
+
+  let result: { tx: string };
+  try {
+    console.log('Requesting wallet transaction...');
+    result = await connectedWallet.makeTransfer([desiredOutput], { payFees: true });
+    console.log('Wallet created transaction:', result);
+  } catch (error) {
+    console.error('=== MAKE TRANSFER ERROR ===');
+    console.error('error:', error);
+    console.error('name:', (error as any)?.name);
+    console.error('message:', (error as any)?.message);
+    console.error('stack:', (error as any)?.stack);
+    console.error('cause:', (error as any)?.cause);
+    throw new Error(`Wallet could not create the USDM funding transaction: ${
+      (error as any)?.message || 'Method not implemented or wallet rejected the request.'
+    }`);
+  }
+
+  if (!result || typeof result.tx !== 'string' || result.tx.length === 0) {
+    throw new Error('Midnight wallet returned an invalid funding transaction.');
+  }
+
+  try {
+    console.log('Submitting QuestPay funding transaction...');
+    await connectedWallet.submitTransaction(result.tx);
+    console.log('QuestPay funding transaction submitted.');
+  } catch (error) {
+    console.error('=== SUBMIT TRANSACTION ERROR ===');
+    console.error('error:', error);
+    console.error('name:', (error as any)?.name);
+    console.error('message:', (error as any)?.message);
+    console.error('stack:', (error as any)?.stack);
+    console.error('cause:', (error as any)?.cause);
+    throw new Error(`USDM transaction was created but could not be submitted: ${
+      (error as any)?.message || 'Unknown wallet submission error.'
+    }`);
+  }
+
+  return { txHash: 'submitted' };
 }
 
 /**
