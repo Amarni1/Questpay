@@ -249,32 +249,76 @@ export async function runUsdmSelfTransferDiagnostic(
         : []
     );
 
-    console.log('[USDM TEST]', {
-      apiVersion: connectedWallet.apiVersion,
-      connectionStatus: await connectedWallet.getConnectionStatus(),
-      networkId: (await connectedWallet.getConnectionStatus() as ConnectionStatus & { networkId?: string }).networkId,
-      address: await connectedWallet.getUnshieldedAddress(),
-      balances: await connectedWallet.getUnshieldedBalances(),
-      tokenColor: USDM_TOKEN_COLOR,
-      amount: 1_000_000n,
-      recipient: await connectedWallet.getUnshieldedAddress(),
-      makeTransferType: typeof connectedWallet.makeTransfer,
-      submitTransactionType: typeof connectedWallet.submitTransaction
-    });
+    console.log('=== QUESTPAY USDM DEBUG ===');
+    console.log('wallet:', connectedWallet);
+    console.log('wallet keys:', Object.keys(connectedWallet ?? {}));
+    console.log('apiVersion:', connectedWallet?.apiVersion);
+    console.log(
+      'connectionStatus:',
+      await connectedWallet?.getConnectionStatus?.()
+    );
+    console.log(
+      'unshieldedAddress:',
+      await connectedWallet?.getUnshieldedAddress?.()
+    );
+    console.log(
+      'unshieldedBalances:',
+      await connectedWallet?.getUnshieldedBalances?.()
+    );
+    console.log(
+      'makeTransfer:',
+      connectedWallet?.makeTransfer,
+      typeof connectedWallet?.makeTransfer
+    );
+    console.log(
+      'submitTransaction:',
+      connectedWallet?.submitTransaction,
+      typeof connectedWallet?.submitTransaction
+    );
 
-    const result = await connectedWallet.makeTransfer([{
+    const output: DesiredOutput = {
       kind: 'unshielded',
       type: USDM_TOKEN_COLOR,
       value: 1_000_000n,
       recipient: ownUnshieldedAddress
-    }]);
-    console.log('[USDM TEST RESULT]', result);
+    };
+    console.log('EXACT OUTPUT:', output);
 
-    if (!result || typeof result.tx !== 'string' || result.tx.length === 0) {
-      throw new Error('Midnight wallet did not return a serialized transaction string for the USDM test.');
+    try {
+      const result = await connectedWallet.makeTransfer([output]);
+
+      console.log('MAKE TRANSFER RESULT:', result);
+      console.log('RESULT TYPE:', typeof result);
+      console.log('RESULT TX:', result?.tx);
+      console.log('RESULT TX TYPE:', typeof result?.tx);
+
+      if (!result?.tx || typeof result.tx !== 'string') {
+        throw new Error('makeTransfer did not return a valid tx string');
+      }
+
+      console.log('SUBMITTING TX...');
+
+      const submitted = await connectedWallet.submitTransaction(result.tx);
+
+      console.log('SUBMIT RESULT:', submitted);
+    } catch (error) {
+      console.error('=== FULL USDM TRANSFER ERROR ===', error);
+      console.error('name:', (error as { name?: unknown } | undefined)?.name);
+      console.error('message:', (error as { message?: unknown } | undefined)?.message);
+      console.error('stack:', (error as { stack?: unknown } | undefined)?.stack);
+      console.error('cause:', (error as { cause?: unknown } | undefined)?.cause);
+
+      try {
+        console.error(
+          'JSON:',
+          JSON.stringify(error, Object.getOwnPropertyNames(error as object), 2)
+        );
+      } catch (jsonError) {
+        console.error('Could not stringify error:', jsonError);
+      }
+
+      throw error;
     }
-
-    await connectedWallet.submitTransaction(result.tx);
 
     for (let attempt = 0; attempt < 30; attempt++) {
       const history = await connectedWallet.getTxHistory(0, 20);
