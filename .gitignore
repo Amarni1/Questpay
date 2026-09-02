@@ -1,9 +1,17 @@
-﻿# Dependencies
+# Dependencies
 node_modules/
 
 # Environment secrets
 .env
 .env.local
+client/.env
+client/.env.local
+
+# Database & local data
+data/
+uploads/
+*.sqlite
+*.db
 
 # Logs
 *.log

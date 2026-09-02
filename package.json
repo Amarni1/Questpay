@@ -1,12 +1,17 @@
-﻿{
+{
   "name": "questpay",
   "version": "1.0.0",
   "description": "QuestPay - Privacy-Preserving Web3 Quest & USDM Escrow Marketplace on Midnight Preview",
-  "main": "server.mjs",
+  "main": "server/src/index.ts",
   "type": "module",
   "scripts": {
-    "start": "node server.mjs",
-    "dev": "node --watch server.mjs"
+    "start": "tsx server/src/index.ts",
+    "dev": "tsx watch server/src/index.ts",
+    "server": "tsx server/src/index.ts",
+    "client": "vite client",
+    "build:client": "vite build client",
+    "build:server": "tsc",
+    "build": "vite build client"
   },
   "keywords": [
     "midnightntwrk",
@@ -22,9 +27,33 @@
   "author": "QuestPay Team",
   "license": "MIT",
   "dependencies": {
+    "better-sqlite3": "^11.8.1",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "cookie-parser": "^1.4.6",
+    "jsonwebtoken": "^9.0.2",
+    "lucide-react": "^0.475.0",
+    "multer": "^1.4.5-lts.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "sql.js": "^1.14.2",
+    "tweetnacl": "^1.0.3",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.8",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^22.13.4",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@types/sql.js": "^1.4.11",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0"
   }
 }

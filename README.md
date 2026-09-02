@@ -1,4 +1,4 @@
-﻿# QuestPay — Privacy-Preserving Web3 Quest & USDM Escrow Marketplace
+# QuestPay — Privacy-Preserving Web3 Quest & USDM Escrow Marketplace
 
 A decentralized, privacy-preserving bounty and quest marketplace built on **Midnight Network (Preview Testnet)**, powered by **Compact** smart contracts and **USDM** token escrow settlement.
 
@@ -86,6 +86,16 @@ Open **[http://localhost:4000](http://localhost:4000)** in your browser.
   * Answer: `recursion` (Instantly verified against on-chain hash → releases 75 USDM).
 * **Vulnerability Quest ("Compact Integer Edge-Case")**:
   * Answer: `overflow_check_missing` (Instantly verified → releases 250 USDM).
+
+---
+
+## 🔒 Security & Authorization Architecture
+
+### Midnight Preview MVP:
+For the Preview testnet MVP, submission inspection and bounty management rely directly on the employer's **connected Midnight wallet address**. When an employer views private submissions or inspects off-chain proofs, the frontend supplies the connected wallet address, and the backend verifies ownership against the bounty record (`request wallet === bounty.employerWallet`). Decrypted proof payloads exist strictly in temporary browser memory and are revoked when closed.
+
+### Production Roadmap:
+For production mainnet environments, full cryptographic challenge-signature verification (`api.signData()`) should be enforced to prove private key ownership on every protected backend action. For the Midnight Preview MVP, signature gating has been streamlined to keep the user experience smooth and free of extra sign-in prompts.
 
 ---
 

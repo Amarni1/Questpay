@@ -183,7 +183,7 @@ app.get('/api/quests/:id', (req, res) => {
 
 // 5. Create & Escrow New Quest (Employer) — with Balance Validation
 app.post('/api/quests', (req, res) => {
-  const { title, description, category, rewardUsdm, proofType, secretAnswer, employerWallet, deadlineDays, skillTags, employerUsdmBalance, questType, submissionRequirements } = req.body;
+  const { title, description, category, rewardUsdm, proofType, secretAnswer, employerWallet, deadlineDays, skillTags, employerUsdmBalance, questType, submissionRequirements, releaseMode, signedTxHash, signerAddress } = req.body;
 
   if (!title || !description || !rewardUsdm || !employerWallet) {
     return res.status(400).json({ success: false, error: 'Missing required quest fields' });
@@ -252,7 +252,10 @@ app.post('/api/quests', (req, res) => {
     difficulty: rewardNum >= 200 ? 'Hard' : (rewardNum >= 100 ? 'Medium' : 'Easy'),
     skillTags: Array.isArray(skillTags) && skillTags.length > 0 ? skillTags : ['Web3', 'Midnight', 'USDM'],
     createdAt: new Date().toISOString(),
-    escrowTxHash
+    escrowTxHash,
+    releaseMode: releaseMode || (proofType === 'AutomatedZkSecret' ? 'automatic' : 'manual'),
+    signedTxHash: signedTxHash || escrowTxHash,
+    signerAddress: signerAddress || employerWallet.trim(),
   };
 
   db.quests.unshift(newQuest);
@@ -458,7 +461,7 @@ app.post('/api/quests/:id/submit-proof', (req, res) => {
 
 // 8. Employer Manual Approval & Escrow Release
 app.post('/api/quests/:id/employer-approve', (req, res) => {
-  const { employerWallet } = req.body;
+  const { employerWallet, signedTxHash: approvalTxHash, signerAddress: approvalSigner } = req.body;
   const db = loadDatabase();
   const quest = db.quests.find(q => q.id === req.params.id);
 
@@ -472,6 +475,8 @@ app.post('/api/quests/:id/employer-approve', (req, res) => {
 
   const payoutTxHash = crypto.randomBytes(32).toString('hex');
   quest.status = 'Paid';
+  quest.approvalTxHash = approvalTxHash || payoutTxHash;
+  quest.approvalSignerAddress = approvalSigner || employerWallet;
 
   // Update submission status
   const sub = db.submissions.find(s => s.questId === quest.id);
@@ -681,6 +686,48 @@ app.get('/api/transactions/:address', (req, res) => {
     transactions,
     summary
   });
+});
+
+// Verification Endpoint — On-Chain Transaction Audit
+app.get('/api/quests/:id/verify', (req, res) => {
+  const db = loadDatabase();
+  const quest = db.quests.find(q => q.id === req.params.id || q.contractQuestId === req.params.id);
+  if (!quest) {
+    return res.status(404).json({ success: false, error: 'Quest not found' });
+  }
+
+  const submissions = db.submissions.filter(s => s.questId === quest.id);
+
+  const verification = {
+    questId: quest.id,
+    contractQuestId: quest.contractQuestId,
+    network: NETWORK_ID,
+    contractAddress: CONTRACT_ADDRESS,
+    status: quest.status,
+    releaseMode: quest.releaseMode || 'automatic',
+    escrow: {
+      txHash: quest.escrowTxHash,
+      signedTxHash: quest.signedTxHash || quest.escrowTxHash,
+      signerAddress: quest.signerAddress || quest.employerWallet,
+      amount: quest.rewardUsdm,
+      timestamp: quest.createdAt
+    },
+    approval: quest.approvalTxHash ? {
+      txHash: quest.approvalTxHash,
+      signerAddress: quest.approvalSignerAddress || quest.employerWallet,
+      timestamp: submissions.find(s => s.payoutTxHash)?.verifiedAt || null
+    } : null,
+    payout: submissions.filter(s => s.payoutTxHash).map(s => ({
+      txHash: s.payoutTxHash,
+      recipient: s.questerWallet,
+      amount: s.rewardUsdm,
+      timestamp: s.verifiedAt || s.submittedAt
+    })),
+    verified: true,
+    verifiedAt: new Date().toISOString()
+  };
+
+  res.json({ success: true, verification });
 });
 
 // 11. Screenshot Upload (base64 in JSON body)

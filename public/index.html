@@ -275,6 +275,25 @@
           </div>
         </div>
 
+        <!-- Release Mode Selector Cards -->
+        <div style="margin-bottom: 1rem;">
+          <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 0.35rem;">USDM Escrow Release Mode</label>
+          <div class="release-mode-grid">
+            <div class="release-mode-card selected" id="card-release-auto" onclick="setCreateReleaseMode('automatic')">
+              <input type="radio" name="releaseMode" value="automatic" checked id="radio-release-auto">
+              <div class="release-mode-icon">⚡</div>
+              <div class="release-mode-label">Automatic (ZK Proof)</div>
+              <div class="release-mode-desc">Contract releases USDM immediately when valid ZK proof is verified</div>
+            </div>
+            <div class="release-mode-card" id="card-release-manual" onclick="setCreateReleaseMode('manual')">
+              <input type="radio" name="releaseMode" value="manual" id="radio-release-manual">
+              <div class="release-mode-icon">👤</div>
+              <div class="release-mode-label">Manual (Employer Review)</div>
+              <div class="release-mode-desc">Employer inspects evidence and signs transaction to release USDM</div>
+            </div>
+          </div>
+        </div>
+
         <div style="margin-bottom: 1rem;" id="submission-requirements-group">
           <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 0.35rem;">Submission Guidance (Optional)</label>
           <input type="text" class="input-styled" id="create-submission-reqs" placeholder="e.g. Provide link to tweet and screenshot of profile follow">
@@ -292,6 +311,85 @@
           <span>Lock USDM Escrow & Publish Quest</span>
         </button>
       </form>
+    </div>
+  </div>
+
+  <!-- Contract Signing Ceremony Overlay Modal -->
+  <div class="signing-ceremony-backdrop" id="signing-ceremony-backdrop">
+    <div class="signing-panel">
+      <div class="signing-header">
+        <div class="signing-header-icon" id="signing-header-icon">📜</div>
+        <h2 id="signing-title">Midnight Escrow Signing Ceremony</h2>
+        <p id="signing-subtitle">Locking USDM into Compact Smart Contract on Midnight Preview</p>
+      </div>
+
+      <!-- 5-Step Progress Bar -->
+      <div class="signing-steps-bar">
+        <div class="signing-step-dot active" id="signing-step-dot-1" title="Balance Check">1</div>
+        <div class="signing-step-connector" id="signing-step-conn-1"></div>
+        <div class="signing-step-dot pending" id="signing-step-dot-2" title="Contract Construction">2</div>
+        <div class="signing-step-connector" id="signing-step-conn-2"></div>
+        <div class="signing-step-dot pending" id="signing-step-dot-3" title="Wallet Signing">3</div>
+        <div class="signing-step-connector" id="signing-step-conn-3"></div>
+        <div class="signing-step-dot pending" id="signing-step-dot-4" title="On-Chain Submission">4</div>
+        <div class="signing-step-connector" id="signing-step-conn-4"></div>
+        <div class="signing-step-dot pending" id="signing-step-dot-5" title="Confirmation">5</div>
+      </div>
+
+      <!-- Active Step Content Area -->
+      <div class="signing-step-content active-step" id="signing-step-content">
+        <div class="signing-spinner" id="signing-spinner"></div>
+        <div class="signing-step-title" id="signing-step-title">Verifying USDM Escrow Balance...</div>
+        <div class="signing-step-desc" id="signing-step-desc">Checking wallet unshielded balance and existing contract locks.</div>
+        <div id="signing-custom-content"></div>
+      </div>
+
+      <!-- Transaction Details -->
+      <div class="signing-tx-details">
+        <div class="signing-tx-row">
+          <span class="signing-tx-label">Quest Title</span>
+          <span class="signing-tx-val" id="signing-tx-quest-title">--</span>
+        </div>
+        <div class="signing-tx-row">
+          <span class="signing-tx-label">Escrow Lock Amount</span>
+          <span class="signing-tx-val gold" id="signing-tx-reward">0.00 USDM</span>
+        </div>
+        <div class="signing-tx-row">
+          <span class="signing-tx-label">Release Mode</span>
+          <span class="signing-tx-val blue" id="signing-tx-release-mode">Automatic (ZK Proof)</span>
+        </div>
+        <div class="signing-tx-row">
+          <span class="signing-tx-label">Contract Address</span>
+          <span class="signing-tx-val" style="font-size: 0.72rem; color: var(--text-dim);" id="signing-tx-contract">0x471dfe...e485c</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="signing-actions">
+        <button class="btn-cancel-signing" id="btn-cancel-signing" onclick="cancelSigningCeremony()">Cancel Ceremony</button>
+        <button class="btn-primary-action" id="btn-finish-signing" style="display: none;" onclick="closeSigningCeremonyAndRefresh()"><span>Done & View Quest</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mini Signing Modal for Employer Approval & Release -->
+  <div class="mini-signing-overlay" id="mini-signing-overlay">
+    <div class="mini-signing-panel">
+      <div class="signing-spinner" id="mini-signing-spinner" style="margin: 0 auto 1rem;"></div>
+      <div style="font-size: 1.8rem; margin-bottom: 0.5rem; display: none;" id="mini-signing-check">✅</div>
+      <h3 style="font-size: 1.25rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.35rem;" id="mini-signing-title">Signing Escrow Release</h3>
+      <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1.25rem;" id="mini-signing-desc">Submitting <code>employer_approve_and_release</code> circuit transaction to Midnight Preview...</p>
+      <div class="signing-tx-details" style="text-align: left; margin-bottom: 1rem;">
+        <div class="signing-tx-row">
+          <span class="signing-tx-label">Bounty Payout</span>
+          <span class="signing-tx-val gold" id="mini-signing-amount">-- USDM</span>
+        </div>
+        <div class="signing-tx-row">
+          <span class="signing-tx-label">Recipient</span>
+          <span class="signing-tx-val" id="mini-signing-recipient" style="font-size: 0.75rem;">--</span>
+        </div>
+      </div>
+      <button class="btn-secondary" id="mini-signing-close-btn" style="display: none; width: 100%;" onclick="closeMiniSigningOverlay()">Done</button>
     </div>
   </div>
 
