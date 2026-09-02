@@ -7,7 +7,10 @@ import {
   usdmToRaw,
   pollTransactionConfirmation,
   MIDNIGHT_EXPLORER_BASE,
-  logOriginalWalletError
+  getExplorerTxUrl,
+  logOriginalWalletError,
+  runUsdmSelfTransferDiagnostic,
+  type UsdmSelfTransferDiagnosticResult
 } from '../services/midnightWallet.js';
 import {
   Sparkles,
@@ -47,6 +50,12 @@ const DURATION_OPTIONS = [
   { label: 'Custom Duration', value: 'custom' }
 ];
 
+type UsdmTransferTestState = {
+  status: 'Pending' | 'Confirmed' | 'Failed';
+  result?: UsdmSelfTransferDiagnosticResult;
+  error?: string;
+};
+
 export const CreateBountyView: React.FC<CreateBountyViewProps> = ({ onNavigate }) => {
   const { wallet, usdmBalance, getRealBalance, fundBountyEscrow, refreshUsdmBalance } = useWallet();
 
@@ -70,6 +79,8 @@ export const CreateBountyView: React.FC<CreateBountyViewProps> = ({ onNavigate }
   const [txHash, setTxHash] = useState<string | null>(null);
   const [txStatus, setTxStatus] = useState<'Pending' | 'Confirmed' | 'Finalized' | 'Discarded'>('Pending');
   const [modalError, setModalError] = useState<string | null>(null);
+  const [isUsdmTransferTestRunning, setIsUsdmTransferTestRunning] = useState(false);
+  const [usdmTransferTest, setUsdmTransferTest] = useState<UsdmTransferTestState | null>(null);
 
   const isUsdmConfigured = !!USDM_TOKEN_TYPE && USDM_TOKEN_TYPE.length > 5;
   const rewardNum = parseFloat(rewardUsdm) || 0;
@@ -217,6 +228,25 @@ export const CreateBountyView: React.FC<CreateBountyViewProps> = ({ onNavigate }
     }
   };
 
+  const handleUsdmTransferTest = async () => {
+    setIsUsdmTransferTestRunning(true);
+    setUsdmTransferTest({ status: 'Pending' });
+
+    try {
+      const result = await runUsdmSelfTransferDiagnostic(wallet.api);
+      setUsdmTransferTest({ status: result.status, result });
+      await refreshUsdmBalance();
+      await checkBalance();
+    } catch (error) {
+      setUsdmTransferTest({
+        status: 'Failed',
+        error: error instanceof Error ? error.message : String(error)
+      });
+    } finally {
+      setIsUsdmTransferTestRunning(false);
+    }
+  };
+
   return (
     <div className="create-bounty-container">
       <div className="view-header">
@@ -267,6 +297,57 @@ export const CreateBountyView: React.FC<CreateBountyViewProps> = ({ onNavigate }
           )}
         </div>
       )}
+
+      <div className="dashboard-card" style={{ maxWidth: '720px', marginBottom: '1.5rem' }}>
+        <div className="dashboard-card-header">
+          <div>
+            <div className="dashboard-card-title">USDM Transfer Test</div>
+            <div style={{ color: 'var(--text-dim)', fontSize: '0.82rem', marginTop: '0.25rem' }}>
+              Sends 1 USDM to the connected Midnight Preview wallet's own unshielded address.
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleUsdmTransferTest}
+            disabled={isUsdmTransferTestRunning}
+          >
+            {isUsdmTransferTestRunning ? <Loader2 size={16} className="animate-spin" /> : <Coins size={16} />}
+            <span>Test 1 USDM Transfer</span>
+          </button>
+        </div>
+
+        {usdmTransferTest && (
+          <div style={{ background: 'var(--bg-obsidian)', border: '1px solid var(--border-subtle)', borderRadius: '12px', padding: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center', marginBottom: usdmTransferTest.result || usdmTransferTest.error ? '0.85rem' : 0 }}>
+              <span style={{ color: 'var(--text-dim)', fontSize: '0.82rem' }}>Status</span>
+              <span style={{ fontWeight: 800, color: usdmTransferTest.status === 'Failed' ? 'var(--rose-danger)' : usdmTransferTest.status === 'Confirmed' ? 'var(--midnight-blue)' : 'var(--gold-primary)' }}>
+                {usdmTransferTest.status}
+              </span>
+            </div>
+
+            {usdmTransferTest.result && (
+              <div style={{ display: 'grid', gap: '0.55rem', fontSize: '0.82rem' }}>
+                <div><span style={{ color: 'var(--text-dim)' }}>Amount: </span>{formatUsdm(usdmTransferTest.result.amount)} USDM</div>
+                <div><span style={{ color: 'var(--text-dim)' }}>Token color: </span><code>{usdmTransferTest.result.tokenColor}</code></div>
+                <div><span style={{ color: 'var(--text-dim)' }}>Recipient: </span><code>{usdmTransferTest.result.recipient}</code></div>
+                <div><span style={{ color: 'var(--text-dim)' }}>Network ID: </span>{usdmTransferTest.result.networkId}</div>
+                <div><span style={{ color: 'var(--text-dim)' }}>Transaction status: </span>{usdmTransferTest.result.txStatus}</div>
+                <div>
+                  <span style={{ color: 'var(--text-dim)' }}>Transaction hash: </span>
+                  <a href={getExplorerTxUrl(usdmTransferTest.result.txHash)} target="_blank" rel="noreferrer" style={{ color: 'var(--midnight-blue)' }}>
+                    {usdmTransferTest.result.txHash} <ExternalLink size={12} style={{ display: 'inline' }} />
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {usdmTransferTest.error && (
+              <pre style={{ color: 'var(--rose-danger)', fontSize: '0.78rem', whiteSpace: 'pre-wrap', margin: 0 }}>{usdmTransferTest.error}</pre>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Bounty Creation Form */}
       <div className="dashboard-card" style={{ maxWidth: '720px' }}>
