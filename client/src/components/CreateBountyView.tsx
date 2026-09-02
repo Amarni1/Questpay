@@ -6,7 +6,8 @@ import {
   formatUsdm,
   usdmToRaw,
   pollTransactionConfirmation,
-  MIDNIGHT_EXPLORER_BASE
+  MIDNIGHT_EXPLORER_BASE,
+  logOriginalWalletError
 } from '../services/midnightWallet.js';
 import {
   Sparkles,
@@ -209,13 +210,10 @@ export const CreateBountyView: React.FC<CreateBountyViewProps> = ({ onNavigate }
       setModalPhase('finalized');
       await refreshUsdmBalance();
       await checkBalance();
-    } catch (error: any) {
-      console.error('===== QUESTPAY FUNDING ERROR =====');
-      console.error('ERROR:', error);
-      console.error('MESSAGE:', error instanceof Error ? error.message : String(error));
-      console.error('STACK:', error instanceof Error ? error.stack : 'NO STACK');
+    } catch (error) {
+      logOriginalWalletError('Fund Bounty UI', error);
       setModalPhase('error');
-      setModalError(error?.message || String(error) || 'On-chain funding transaction failed.');
+      setModalError(error instanceof Error ? error.message : String(error));
     }
   };
 
